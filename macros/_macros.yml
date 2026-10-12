@@ -1,0 +1,66 @@
+version: 2
+
+macros:
+  - name: safra_para_ano
+    description: >
+      Ano civil de uma safra `AAAA/AA`: o ano inicial mais `deslocamento`. O padrão (1) é a convenção do
+      agrobr, ano civil = 2º ano da safra (`2023/24` → 2024). O deslocamento por produto está na seed
+      `produtos`.
+    arguments:
+      - name: safra
+        type: string
+        description: Expressão SQL com a safra no formato `AAAA/AA`.
+      - name: deslocamento
+        type: string
+        description: Expressão SQL ou número somado ao ano inicial da safra.
+
+  - name: ano_para_safra
+    description: >
+      Inverso de `safra_para_ano`: a safra `AAAA/AA` cujo ano inicial é `ano - deslocamento`
+      (`2024` → `2023/24`; `2000` → `1999/00`).
+    arguments:
+      - name: ano
+        type: string
+        description: Expressão SQL com o ano civil.
+      - name: deslocamento
+        type: string
+        description: Expressão SQL ou número; o mesmo usado em `safra_para_ano`.
+
+  - name: uf_de_codigo_ibge
+    description: >
+      Sigla da UF a partir do código IBGE do município (7 dígitos) ou da UF (2 dígitos), pela seed `uf`.
+      Nula para outro código (ex.: 1, Brasil).
+    arguments:
+      - name: codigo
+        type: string
+        description: Expressão SQL com o código IBGE.
+
+  - name: converter_unidade
+    description: >
+      Converte `valor` da unidade `de` para `para` pelo fator da seed `unidades`. Sem linha na seed para o
+      par, o resultado é nulo; os testes do staging avisam quando isso acontece com valor preenchido.
+    arguments:
+      - name: valor
+        type: string
+        description: Expressão SQL com o valor.
+      - name: de
+        type: string
+        description: Expressão SQL com a unidade de origem (coluna ou literal entre aspas simples).
+      - name: para
+        type: string
+        description: Expressão SQL com a unidade de destino (coluna ou literal entre aspas simples).
+
+  - name: deflacionar
+    description: >
+      Valor em moeda da data-base: `valor * indice_base / indice`, com `indice` o número-índice de preços
+      na data do valor e `indice_base` o da data-base. Índice zero dá nulo.
+    arguments:
+      - name: valor
+        type: string
+        description: Expressão SQL com o valor nominal.
+      - name: indice
+        type: string
+        description: Expressão SQL com o número-índice na data do valor.
+      - name: indice_base
+        type: string
+        description: Expressão SQL com o número-índice na data-base.
