@@ -1,0 +1,770 @@
+version: 2
+models:
+- name: dim_municipio
+  description: >-
+    Municípios do IBGE com UF, região, coordenadas e a célula da grade MERRA-2 (0,5° × 0,625°) do NASA POWER que
+    contém as coordenadas.
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: cod_municipio
+    description: Código IBGE de 7 dígitos.
+    data_type: bigint
+    data_tests:
+    - unique
+    - not_null
+  - name: nome
+    description: Nome do município.
+    data_type: varchar
+  - name: uf
+    description: '{{ doc(''col_uf'') }}'
+    data_type: varchar
+    data_tests:
+    - not_null
+  - name: codigo_uf
+    description: Código IBGE da UF (2 dígitos).
+    data_type: integer
+  - name: nome_uf
+    description: Nome da UF.
+    data_type: varchar
+  - name: regiao
+    description: Grande região do IBGE.
+    data_type: varchar
+  - name: lat
+    description: Latitude do ponto do município na base do agrobr.
+    data_type: double
+  - name: lon
+    description: Longitude do ponto do município na base do agrobr.
+    data_type: double
+  - name: celula_lat
+    description: Latitude do centro da célula da grade que contém o ponto.
+    data_type: double
+    data_tests:
+    - not_null
+  - name: celula_lon
+    description: Longitude do centro da célula da grade que contém o ponto.
+    data_type: double
+    data_tests:
+    - not_null
+- name: dim_produto
+  description: Os produtos da seed `produtos` e as fontes que trouxeram dado de cada um nesta carga.
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: produto
+    description: Identificador do produto no agrobr.
+    data_type: varchar
+    data_tests:
+    - unique
+    - not_null
+  - name: nome
+    description: Nome de exibição.
+    data_type: varchar
+    data_tests:
+    - unique
+    - not_null
+  - name: nome_pam
+    description: Nome da categoria na PAM (tabela 5457 do SIDRA); nulo sem PAM.
+    data_type: varchar
+  - name: codigo_pam
+    description: Código da categoria na classificação 782 da tabela 5457.
+    data_type: integer
+  - name: grupo_conab
+    description: Grupo do boletim de grãos da CONAB (`verao` ou `inverno`); nulo fora do boletim.
+    data_type: varchar
+  - name: deslocamento_ano
+    description: Anos entre o ano inicial da safra e o ano civil da PAM.
+    data_type: integer
+  - name: calendario
+    description: '`safra` (julho a junho) ou `ano_civil`.'
+    data_type: varchar
+  - name: janela_jul_jun
+    description: >-
+      Se o clima de julho a junho é comparado com o rendimento: grãos plantados na primavera e no verão. É um ano
+      agrícola descritivo; parte da colheita da segunda e da terceira safra cai depois de junho.
+    data_type: boolean
+  - name: tem_pam
+    description: Há linha da PAM para o produto nesta carga.
+    data_type: boolean
+  - name: tem_conab
+    description: Há estimativa da CONAB para o produto nesta carga.
+    data_type: boolean
+  - name: tem_preco
+    description: Há indicador do CEPEA para o produto nesta carga.
+    data_type: boolean
+  - name: tem_credito
+    description: Há crédito rural do SICOR para o produto nesta carga.
+    data_type: boolean
+- name: dim_safra
+  description: Safras de julho a junho presentes na CONAB, no SICOR ou no clima.
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: safra
+    description: Safra no formato AAAA/AA.
+    data_type: varchar
+    data_tests:
+    - unique
+    - not_null
+  - name: ano_inicial
+    description: Ano de julho a dezembro.
+    data_type: integer
+  - name: ano_final
+    description: Ano de janeiro a junho.
+    data_type: integer
+  - name: data_inicio
+    description: 1º de julho do ano inicial.
+    data_type: date
+  - name: data_fim
+    description: 30 de junho do ano final.
+    data_type: date
+- name: fct_brasil_ano
+  description: >-
+    PAM do Brasil por ano civil e produto, como o IBGE publica, com o valor da produção em reais de `mes_base_real`
+    e a soma das UFs ao lado para conferência.
+  config:
+    contract:
+      enforced: true
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - ano
+        - produto
+  columns:
+  - name: ano
+    description: '{{ doc(''col_ano'') }}'
+    data_type: bigint
+    data_tests:
+    - not_null
+  - name: produto
+    description: '{{ doc(''col_produto'') }}'
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_produto')
+          field: produto
+  - name: area_plantada_ha
+    description: '{{ doc(''col_area_plantada_ha'') }}'
+    data_type: double
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+  - name: area_colhida_ha
+    description: '{{ doc(''col_area_colhida_ha'') }}'
+    data_type: double
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+  - name: producao_t
+    description: '{{ doc(''col_producao_t'') }}'
+    data_type: double
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+  - name: rendimento_kg_ha
+    description: '{{ doc(''col_rendimento_kg_ha'') }}'
+    data_type: double
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+  - name: valor_producao_brl
+    description: '{{ doc(''col_valor_producao_brl'') }}'
+    data_type: double
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+  - name: valor_producao_brl_real
+    description: '{{ doc(''col_valor_producao_brl_real'') }}'
+    data_type: double
+  - name: mes_base_real
+    description: '{{ doc(''col_mes_base_real'') }}'
+    data_type: date
+  - name: ufs
+    description: UFs com linha publicada no ano.
+    data_type: bigint
+  - name: producao_t_soma_uf
+    description: Soma da produção das UFs.
+    data_type: double
+  - name: licencas
+    description: '{{ doc(''col_licencas'') }}'
+    data_type: varchar
+    data_tests:
+    - not_null
+- name: fct_uf_ano
+  description: >-
+    PAM por UF, ano civil e produto, como o IBGE publica, com a participação da UF na produção do Brasil, a posição
+    no ranking do ano e a soma dos municípios ao lado.
+  config:
+    contract:
+      enforced: true
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - uf
+        - ano
+        - produto
+  columns:
+  - name: uf
+    description: '{{ doc(''col_uf'') }}'
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('uf')
+          field: uf
+  - name: ano
+    description: '{{ doc(''col_ano'') }}'
+    data_type: bigint
+    data_tests:
+    - not_null
+  - name: produto
+    description: '{{ doc(''col_produto'') }}'
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_produto')
+          field: produto
+  - name: area_plantada_ha
+    description: '{{ doc(''col_area_plantada_ha'') }}'
+    data_type: double
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+  - name: area_colhida_ha
+    description: '{{ doc(''col_area_colhida_ha'') }}'
+    data_type: double
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+  - name: producao_t
+    description: '{{ doc(''col_producao_t'') }}'
+    data_type: double
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+  - name: rendimento_kg_ha
+    description: '{{ doc(''col_rendimento_kg_ha'') }}'
+    data_type: double
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+  - name: valor_producao_brl
+    description: '{{ doc(''col_valor_producao_brl'') }}'
+    data_type: double
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+  - name: valor_producao_brl_real
+    description: '{{ doc(''col_valor_producao_brl_real'') }}'
+    data_type: double
+  - name: mes_base_real
+    description: '{{ doc(''col_mes_base_real'') }}'
+    data_type: date
+  - name: participacao_producao_brasil
+    description: Produção da UF dividida pela produção do Brasil publicada no mesmo ano (0 a 1).
+    data_type: double
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+          max_value: 1.0001
+  - name: posicao_producao
+    description: Posição da UF na produção do produto no ano (1 = maior).
+    data_type: bigint
+  - name: municipios
+    description: Linhas municipais da UF no ano.
+    data_type: bigint
+  - name: producao_t_soma_municipal
+    description: Soma da produção dos municípios da UF.
+    data_type: double
+  - name: licencas
+    description: '{{ doc(''col_licencas'') }}'
+    data_type: varchar
+    data_tests:
+    - not_null
+- name: fct_municipio_ano
+  description: >-
+    PAM municipal por ano civil e produto, com a participação do município na produção da UF e do Brasil.
+  config:
+    contract:
+      enforced: true
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - cod_municipio
+        - ano
+        - produto
+  columns:
+  - name: cod_municipio
+    description: Código IBGE de 7 dígitos.
+    data_type: bigint
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_municipio')
+          field: cod_municipio
+  - name: municipio
+    description: Nome do município.
+    data_type: varchar
+  - name: uf
+    description: '{{ doc(''col_uf'') }}'
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('uf')
+          field: uf
+  - name: ano
+    description: '{{ doc(''col_ano'') }}'
+    data_type: bigint
+    data_tests:
+    - not_null
+  - name: produto
+    description: '{{ doc(''col_produto'') }}'
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_produto')
+          field: produto
+  - name: area_plantada_ha
+    description: '{{ doc(''col_area_plantada_ha'') }}'
+    data_type: double
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+  - name: area_colhida_ha
+    description: '{{ doc(''col_area_colhida_ha'') }}'
+    data_type: double
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+  - name: producao_t
+    description: '{{ doc(''col_producao_t'') }}'
+    data_type: double
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+  - name: rendimento_kg_ha
+    description: '{{ doc(''col_rendimento_kg_ha'') }}'
+    data_type: double
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+  - name: valor_producao_brl
+    description: '{{ doc(''col_valor_producao_brl'') }}'
+    data_type: double
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+  - name: valor_producao_brl_real
+    description: '{{ doc(''col_valor_producao_brl_real'') }}'
+    data_type: double
+  - name: mes_base_real
+    description: '{{ doc(''col_mes_base_real'') }}'
+    data_type: date
+  - name: participacao_producao_uf
+    description: Produção do município dividida pela produção da UF publicada no mesmo ano.
+    data_type: double
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+          max_value: 1.0001
+  - name: participacao_producao_brasil
+    description: Produção do município dividida pela produção do Brasil publicada no mesmo ano.
+    data_type: double
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+          max_value: 1.0001
+  - name: licencas
+    description: '{{ doc(''col_licencas'') }}'
+    data_type: varchar
+    data_tests:
+    - not_null
+- name: fct_uf_safra
+  description: >-
+    Os grãos do boletim da CONAB com safra comprovada (soja, milho, arroz, feijão, algodão, trigo) por UF e safra
+    de julho a junho. Junta a PAM do ano `ano_pam` (2º ano da safra), a estimativa da CONAB, o crédito de custeio
+    do SICOR e, para os grãos plantados na primavera e no verão, o clima de julho a junho ponderado pela área plantada.
+    Não há preço aqui: o indicador do CEPEA é de uma praça, não da UF, e está em `fct_preco_mes`.
+  config:
+    contract:
+      enforced: true
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - uf
+        - safra
+        - produto
+  columns:
+  - name: uf
+    description: '{{ doc(''col_uf'') }}'
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('uf')
+          field: uf
+  - name: safra
+    description: Safra de julho a junho (AAAA/AA).
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_safra')
+          field: safra
+  - name: produto
+    description: '{{ doc(''col_produto'') }}'
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_produto')
+          field: produto
+  - name: ano_pam
+    description: Ano civil da PAM que corresponde à safra.
+    data_type: integer
+  - name: mes_base_real
+    description: '{{ doc(''col_mes_base_real'') }}'
+    data_type: date
+  - name: pam_area_plantada_ha
+    description: '{{ doc(''col_area_plantada_ha'') }}'
+    data_type: double
+  - name: pam_area_colhida_ha
+    description: '{{ doc(''col_area_colhida_ha'') }}'
+    data_type: double
+  - name: pam_producao_t
+    description: '{{ doc(''col_producao_t'') }}'
+    data_type: double
+  - name: pam_rendimento_kg_ha
+    description: '{{ doc(''col_rendimento_kg_ha'') }}'
+    data_type: double
+  - name: pam_valor_producao_brl
+    description: '{{ doc(''col_valor_producao_brl'') }}'
+    data_type: double
+  - name: pam_valor_producao_brl_real
+    description: '{{ doc(''col_valor_producao_brl_real'') }}'
+    data_type: double
+  - name: conab_origem
+    description: '`serie_historica` (revisão consolidada) ou `levantamento` (boletim mensal).'
+    data_type: varchar
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - serie_historica
+          - levantamento
+  - name: conab_levantamento
+    description: Número do levantamento do boletim; nulo na série histórica.
+    data_type: bigint
+  - name: conab_data_publicacao
+    description: Data de publicação do boletim; nula na série histórica.
+    data_type: date
+  - name: conab_area_plantada_ha
+    description: Área plantada estimada pela CONAB (ha).
+    data_type: double
+  - name: conab_producao_t
+    description: Produção estimada pela CONAB (t); no algodão, em caroço.
+    data_type: double
+  - name: conab_produtividade_kg_ha
+    description: Produtividade estimada pela CONAB (kg/ha).
+    data_type: double
+  - name: conab_menos_pam_producao_pct
+    description: >-
+      (produção CONAB − produção PAM) ÷ produção PAM. Diferença entre duas fontes que medem a mesma safra por métodos
+      distintos; não é erro de nenhuma delas.
+    data_type: double
+  - name: credito_custeio_brl
+    description: Crédito de custeio contratado no SICOR na safra (BRL correntes).
+    data_type: double
+  - name: credito_custeio_brl_real
+    description: Crédito de custeio em reais de `mes_base_real`, pela média do IPCA na safra.
+    data_type: double
+  - name: credito_custeio_contratos
+    description: Número de contratos de custeio.
+    data_type: bigint
+  - name: clima_precip_jul_jun_mm
+    description: >-
+      Chuva de julho a junho (mm) nas células da grade dos municípios que plantaram o produto, ponderada pela área
+      plantada; nula quando `janela_jul_jun` é falso (trigo).
+    data_type: double
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+          max_value: 6000
+  - name: clima_temp_media_jul_jun_c
+    description: >-
+      Média simples das 12 temperaturas médias mensais de julho a junho (°C), com a mesma ponderação espacial.
+    data_type: double
+  - name: clima_area_coberta_pct
+    description: Fração da área plantada cujas células têm os 12 meses de clima completos.
+    data_type: double
+  - name: licencas
+    description: '{{ doc(''col_licencas'') }}'
+    data_type: varchar
+    data_tests:
+    - not_null
+- name: fct_estimativa_levantamento
+  description: >-
+    Cada levantamento mensal da CONAB por UF desde a safra 2022/23, na edição original do boletim: mostra como a
+    estimativa de cada safra foi revisada até o número final. Não tem linha de Brasil; o painel soma as UFs.
+  config:
+    contract:
+      enforced: true
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - produto
+        - safra
+        - uf
+        - levantamento
+  columns:
+  - name: produto
+    description: '{{ doc(''col_produto'') }}'
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_produto')
+          field: produto
+  - name: safra
+    description: Safra de julho a junho (AAAA/AA).
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_safra')
+          field: safra
+  - name: uf
+    description: '{{ doc(''col_uf'') }}'
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('uf')
+          field: uf
+  - name: levantamento
+    description: 'Número do levantamento no ciclo da safra: o 1º sai em outubro, o 12º em setembro do ano seguinte.'
+    data_type: bigint
+    data_tests:
+    - not_null
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 1
+          max_value: 12
+  - name: data_publicacao
+    description: Data de publicação do boletim.
+    data_type: date
+    data_tests:
+    - not_null
+  - name: area_plantada_ha
+    description: Área plantada estimada (ha).
+    data_type: double
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+  - name: producao_t
+    description: Produção estimada (t); no algodão, em caroço.
+    data_type: double
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+  - name: produtividade_kg_ha
+    description: Produtividade estimada (kg/ha), como a CONAB publica.
+    data_type: double
+  - name: producao_variacao_pct
+    description: >-
+      Variação da produção estimada em relação ao levantamento anterior da mesma safra e UF (fração: 0,05 = +5%);
+      nula no 1º levantamento e quando o anterior é zero.
+    data_type: double
+  - name: licencas
+    description: '{{ doc(''col_licencas'') }}'
+    data_type: varchar
+    data_tests:
+    - not_null
+- name: fct_preco_mes
+  description: >-
+    Média mensal do indicador do CEPEA/ESALQ por produto e praça, na unidade publicada e em BRL/t, nominal e em
+    reais de `mes_base_real`. O mês corrente sai parcial e sem valor real até o IPCA do mês sair.
+  config:
+    contract:
+      enforced: true
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - produto
+        - praca
+        - mes
+  columns:
+  - name: produto
+    description: Identificador do produto (`cafe` = arábica; `cafe_robusta` = robusta/conilon).
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_produto')
+          field: produto
+  - name: praca
+    description: Praça do indicador.
+    data_type: varchar
+    data_tests:
+    - not_null
+  - name: indicador
+    description: Nome oficial do indicador (seed `indicadores_cepea`).
+    data_type: varchar
+    data_tests:
+    - not_null
+  - name: referencia
+    description: Local a que o preço se refere, nas palavras do CEPEA.
+    data_type: varchar
+  - name: unidade
+    description: Unidade publicada pelo CEPEA.
+    data_type: varchar
+  - name: mes
+    description: Primeiro dia do mês.
+    data_type: timestamp
+    data_tests:
+    - not_null
+  - name: preco_medio
+    description: Média dos dias do mês, na unidade publicada.
+    data_type: double
+  - name: preco_medio_brl_t
+    description: A mesma média em BRL/t.
+    data_type: double
+  - name: preco_medio_real
+    description: Média na unidade publicada, em reais de `mes_base_real`.
+    data_type: double
+  - name: preco_medio_brl_t_real
+    description: Média em BRL/t, em reais de `mes_base_real`.
+    data_type: double
+  - name: mes_base_real
+    description: '{{ doc(''col_mes_base_real'') }}'
+    data_type: date
+  - name: preco_minimo
+    description: Menor valor diário do mês, na unidade publicada.
+    data_type: double
+  - name: preco_maximo
+    description: Maior valor diário do mês, na unidade publicada.
+    data_type: double
+  - name: dias_com_preco
+    description: Dias com indicador no mês.
+    data_type: bigint
+  - name: dias_via_republicacao
+    description: Dias obtidos pela republicação do indicador no Notícias Agrícolas.
+    data_type: bigint
+  - name: licencas
+    description: '{{ doc(''col_licencas'') }}'
+    data_type: varchar
+    data_tests:
+    - not_null
+- name: fct_credito_uf_safra
+  description: >-
+    Crédito rural do SICOR por UF, safra de julho a junho (mês de emissão), produto e finalidade, em reais correntes
+    e de `mes_base_real`.
+  config:
+    contract:
+      enforced: true
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - uf
+        - safra
+        - produto
+        - finalidade
+  columns:
+  - name: uf
+    description: '{{ doc(''col_uf'') }}'
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('uf')
+          field: uf
+  - name: safra
+    description: Safra de julho a junho que contém o mês de emissão.
+    data_type: varchar
+  - name: produto
+    description: '{{ doc(''col_produto'') }}'
+    data_type: varchar
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_produto')
+          field: produto
+  - name: finalidade
+    description: Finalidade do crédito (custeio).
+    data_type: varchar
+  - name: valor_brl
+    description: Valor contratado (BRL correntes).
+    data_type: double
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+  - name: valor_brl_real
+    description: Valor contratado em reais de `mes_base_real`, pela média do IPCA na safra.
+    data_type: double
+  - name: mes_base_real
+    description: '{{ doc(''col_mes_base_real'') }}'
+    data_type: date
+  - name: qtd_contratos
+    description: Número de contratos.
+    data_type: bigint
+  - name: valor_medio_contrato_brl
+    description: Valor contratado dividido pelo número de contratos (BRL correntes).
+    data_type: double
+  - name: participacao_valor_brasil
+    description: Valor da UF dividido pela soma das UFs na mesma safra, produto e finalidade.
+    data_type: double
+  - name: licencas
+    description: '{{ doc(''col_licencas'') }}'
+    data_type: varchar
+    data_tests:
+    - not_null

@@ -1,0 +1,26 @@
+version: 2
+
+exposures:
+  - name: painel
+    label: Painel dbt-agrobr
+    type: dashboard
+    maturity: high
+    url: https://bruno-portfolio.github.io/dbt-agrobr/
+    description: >-
+      Site estático com produção, estimativas de safra, preços, crédito rural e clima. `painel/exportar.py` lê estes
+      modelos e grava os JSON que o site carrega; o workflow `atualizar` refaz carga, build e exportação todo mês.
+    depends_on:
+      - ref('fct_brasil_ano')
+      - ref('fct_uf_ano')
+      - ref('fct_municipio_ano')
+      - ref('fct_uf_safra')
+      - ref('fct_estimativa_levantamento')
+      - ref('fct_preco_mes')
+      - ref('fct_credito_uf_safra')
+      - ref('dim_municipio')
+      - ref('dim_produto')
+      - ref('int_ipca__indice_mensal')
+      - ref('uf')
+      - ref('indicadores_cepea')
+    owner:
+      name: Bruno
