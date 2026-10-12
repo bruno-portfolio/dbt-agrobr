@@ -1,0 +1,348 @@
+version: 2
+
+models:
+
+  - name: int_ipca__indice_mensal
+    description: >
+      Número-índice mensal do IPCA (SGS `codigo_ipca`, variação mensal em %), encadeado a partir do primeiro mês
+      carregado. `indice_base` é o índice de `mes_base`: o mês da var `mes_base_ipca` ou, sem ela, o último mês
+      carregado. Valor real = valor nominal × `indice_base` / índice do período (reais de `mes_base`).
+    data_tests:
+      - dbt_utils.sequential_values:
+          arguments: {interval: 1, datepart: month}
+          column_name: mes
+    columns:
+      - name: mes
+        description: Mês, no primeiro dia.
+        data_tests: [unique, not_null]
+      - name: variacao_pct
+        description: Variação mensal do IPCA (%); um mês sem variação interromperia o encadeamento do índice.
+        data_tests: [not_null]
+      - name: indice
+        description: >-
+          Número-índice encadeado: 100 × o produto de (1 + variação/100) do primeiro mês carregado até este, inclusive.
+        data_tests: [not_null]
+      - name: mes_base
+        description: 'Mês-base dos valores reais: o da var `mes_base_ipca` ou, sem ela, o último mês carregado.'
+      - name: indice_base
+        description: Índice do IPCA em `mes_base`.
+        data_tests: [not_null]
+
+  - name: int_ipca__indice_anual
+    description: Média do índice do IPCA nos 12 meses do ano civil; só anos completos.
+    columns:
+      - name: ano
+        description: Ano civil.
+        data_tests: [unique, not_null]
+      - name: indice_medio
+        description: Média do índice nos 12 meses do ano.
+      - name: meses
+        description: Meses do ano com índice; sempre 12, porque o modelo descarta anos incompletos.
+      - name: indice_base
+        description: Índice do IPCA em `mes_base`.
+      - name: mes_base
+        description: '{{ doc(''col_mes_base_real'') }}'
+
+  - name: int_ipca__indice_safra
+    description: Média do índice do IPCA nos 12 meses da safra (julho a junho); só safras completas.
+    columns:
+      - name: safra
+        description: Safra de julho a junho (AAAA/AA).
+        data_tests: [unique, not_null]
+      - name: indice_medio
+        description: Média do índice nos 12 meses da safra, de julho a junho.
+      - name: meses
+        description: Meses da safra com índice; sempre 12, porque o modelo descarta safras incompletas.
+      - name: indice_base
+        description: Índice do IPCA em `mes_base`.
+      - name: mes_base
+        description: '{{ doc(''col_mes_base_real'') }}'
+
+  - name: int_preco__mes
+    description: >
+      Média mensal do indicador diário do CEPEA por produto e praça, na unidade original e em BRL/t, nominal e em
+      reais de `mes_base` (IPCA do mês). `dias_via_republicacao` conta os dias que o agrobr obteve pela republicação
+      do indicador no Notícias Agrícolas.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [produto, praca, mes]
+    columns:
+      - name: produto
+        description: '{{ doc(''col_produto'') }}'
+      - name: praca
+        description: Praça do indicador.
+      - name: unidade
+        description: Unidade publicada do indicador.
+      - name: mes
+        description: Mês, no primeiro dia.
+      - name: preco_medio
+        description: Média dos dias com preço, na unidade publicada.
+      - name: preco_medio_brl_t
+        description: Média dos dias com preço, em BRL/t.
+      - name: preco_medio_real
+        description: >-
+          Média na unidade publicada, em reais de `mes_base` pelo índice do IPCA do mês; nula no mês ainda sem IPCA.
+      - name: preco_medio_brl_t_real
+        description: Média em BRL/t, com a mesma correção.
+      - name: dias_com_preco
+        description: Dias com preço no mês.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 1, max_value: 31}
+      - name: dias_via_republicacao
+        description: Dias obtidos pela republicação do indicador no Notícias Agrícolas.
+      - name: preco_minimo
+        description: Menor preço diário do mês, na unidade publicada.
+      - name: preco_maximo
+        description: Maior preço diário do mês, na unidade publicada.
+
+  - name: int_estimativa__ultimo_levantamento
+    description: >
+      A estimativa mais recente por fonte × produto × safra × UF. Na CONAB, a linha da série histórica (`levantamento`
+      e `data_publicacao` nulos, servida para safra duas ou mais atrás da edição mais recente) vence, por ser a
+      revisada; depois vale a `data_publicacao` mais recente e o maior `levantamento` (o número é do boletim que
+      publicou, não da safra). No LSPA vale o ano e mês mais recentes.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [fonte, produto, safra, uf]
+    columns:
+      - name: fonte
+        description: >-
+          `conab` (Acompanhamento da Safra Brasileira de Grãos) ou `ibge_lspa` (Levantamento Sistemático da Produção
+          Agrícola).
+      - name: produto
+        description: '{{ doc(''col_produto'') }}'
+      - name: safra
+        description: >-
+          Safra de julho a junho (AAAA/AA), como o agrobr normaliza; o trigo, que a CONAB rotula pelo ano da colheita,
+          vem como a safra que termina nesse ano.
+      - name: ano_final_safra
+        description: Segundo ano da safra (2024 em 2023/24).
+      - name: uf
+        description: Sigla da UF; nula no total Brasil.
+      - name: origem_estimativa
+        description: '`serie_historica`, `levantamento` (CONAB) ou `lspa`.'
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [serie_historica, levantamento, lspa]
+      - name: levantamento
+        description: Número do levantamento do boletim da CONAB que publicou a linha; nulo na série histórica.
+      - name: data_publicacao
+        description: Data de publicação do boletim; nula na série histórica.
+      - name: ano_lspa
+        description: Ano civil efetivo do LSPA; nulo na CONAB.
+      - name: mes_lspa
+        description: Mês efetivo do LSPA; não corresponde ao levantamento da CONAB.
+      - name: area_plantada_ha
+        description: Área plantada estimada (ha), convertida pela seed `unidades` a partir de `unidade_area` (mil
+          ha).
+      - name: area_colhida_ha
+        description: Área colhida estimada (ha), convertida pela seed `unidades` a partir de `unidade_area` (mil
+          ha).
+      - name: producao_t
+        description: >-
+          Produção estimada (t), convertida pela seed `unidades` a partir de `unidade_producao` (mil t); no algodão,
+          em caroço.
+      - name: produtividade_kg_ha
+        description: Produtividade estimada (kg/ha), como a fonte publica.
+
+  - name: int_credito__uf_safra
+    description: >
+      Crédito rural por UF × safra × produto × finalidade, somado sobre as linhas de `agregacao = 'uf'` (as linhas
+      por programa são o outro nível de agregação do SICOR; somar os dois contaria duas vezes). A safra do SICOR
+      é a de julho a junho que contém o mês de emissão do contrato.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [uf, safra, produto, finalidade]
+    columns:
+      - name: uf
+        description: '{{ doc(''col_uf'') }}'
+      - name: safra
+        description: Safra de julho a junho que contém o mês de emissão do contrato.
+      - name: produto
+        description: '{{ doc(''col_produto'') }}'
+      - name: finalidade
+        description: Finalidade do crédito no SICOR.
+      - name: valor_brl
+        description: Valor contratado somado (BRL correntes).
+      - name: area_financiada_ha
+        description: Área financiada somada (ha); vazia nesta carga.
+      - name: qtd_contratos
+        description: Contratos somados.
+
+  - name: int_pam__municipio_ano
+    description: PAM municipal por ano civil e produto, nas unidades canônicas.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cod_municipio, ano, produto]
+    columns:
+      - name: cod_municipio
+        description: Código IBGE do município (7 dígitos).
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_municipio'), field: cod_municipio}
+      - name: uf
+        description: '{{ doc(''col_uf'') }}'
+        data_tests: [not_null]
+      - name: ano
+        description: '{{ doc(''col_ano'') }}'
+      - name: produto
+        description: '{{ doc(''col_produto'') }}'
+      - name: area_plantada_ha
+        description: '{{ doc(''col_area_plantada_ha'') }}'
+      - name: area_colhida_ha
+        description: '{{ doc(''col_area_colhida_ha'') }}'
+      - name: producao_t
+        description: '{{ doc(''col_producao_t'') }}'
+      - name: rendimento_kg_ha
+        description: '{{ doc(''col_rendimento_kg_ha'') }}'
+      - name: valor_producao_brl
+        description: '{{ doc(''col_valor_producao_brl'') }}'
+
+  - name: int_pam__uf_ano
+    description: >
+      Linha da UF publicada pelo IBGE na PAM, com a soma dos municípios ao lado (`*_soma_municipal`) para o teste
+      de consistência. `municipios` conta as linhas municipais da UF no ano.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [uf, ano, produto]
+    columns:
+      - name: uf
+        description: '{{ doc(''col_uf'') }}'
+      - name: ano
+        description: '{{ doc(''col_ano'') }}'
+      - name: produto
+        description: '{{ doc(''col_produto'') }}'
+      - name: area_plantada_ha
+        description: '{{ doc(''col_area_plantada_ha'') }}'
+      - name: area_colhida_ha
+        description: '{{ doc(''col_area_colhida_ha'') }}'
+      - name: producao_t
+        description: '{{ doc(''col_producao_t'') }}'
+      - name: rendimento_kg_ha
+        description: '{{ doc(''col_rendimento_kg_ha'') }}'
+      - name: valor_producao_brl
+        description: '{{ doc(''col_valor_producao_brl'') }}'
+      - name: municipios
+        description: Linhas municipais da UF no ano, isto é, municípios que a PAM lista para o produto.
+      - name: area_plantada_ha_soma_municipal
+        description: Soma dos municípios da área plantada ou destinada à colheita (ha), para conferência.
+      - name: producao_t_soma_municipal
+        description: Soma dos municípios da produção (t), para conferência.
+      - name: valor_producao_brl_soma_municipal
+        description: Soma dos municípios do valor da produção (BRL correntes), para conferência.
+
+  - name: int_pam__brasil_ano
+    description: >
+      Linha do Brasil publicada pelo IBGE na PAM, com a soma das UFs ao lado (`*_soma_uf`) para o teste de consistência.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [ano, produto]
+    columns:
+      - name: ano
+        description: '{{ doc(''col_ano'') }}'
+      - name: produto
+        description: '{{ doc(''col_produto'') }}'
+      - name: area_plantada_ha
+        description: '{{ doc(''col_area_plantada_ha'') }}'
+      - name: area_colhida_ha
+        description: '{{ doc(''col_area_colhida_ha'') }}'
+      - name: producao_t
+        description: '{{ doc(''col_producao_t'') }}'
+      - name: rendimento_kg_ha
+        description: '{{ doc(''col_rendimento_kg_ha'') }}'
+      - name: valor_producao_brl
+        description: '{{ doc(''col_valor_producao_brl'') }}'
+      - name: ufs
+        description: UFs com linha publicada no ano; 27 quando a carga está completa.
+      - name: area_plantada_ha_soma_uf
+        description: Soma das UFs da área plantada ou destinada à colheita (ha), para conferência.
+      - name: producao_t_soma_uf
+        description: Soma das UFs da produção (t), para conferência.
+      - name: valor_producao_brl_soma_uf
+        description: Soma das UFs do valor da produção (BRL correntes), para conferência.
+
+  - name: int_clima__celula_safra
+    description: >
+      Clima por célula da grade e safra de julho a junho. Chuva somada e temperatura média só com os 12 meses completos
+      (todos os dias com dado); com menos, nulas.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [celula_lat, celula_lon, safra]
+    columns:
+      - name: celula_lat
+        description: Latitude do centro da célula da grade MERRA-2 (múltiplo de 0,5°).
+      - name: celula_lon
+        description: Longitude do centro da célula da grade MERRA-2 (múltiplo de 0,625°).
+      - name: safra
+        description: Safra de julho a junho (AAAA/AA).
+      - name: meses_completos
+        description: Meses da safra com dado em todos os dias.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0, max_value: 12}
+      - name: precip_jul_jun_mm
+        description: Chuva somada de julho a junho (mm); nula sem os 12 meses completos.
+      - name: temp_media_jul_jun_c
+        description: Média simples das 12 temperaturas médias mensais (°C); nula sem os 12 meses completos.
+
+  - name: int_clima__uf_produto_safra
+    description: >
+      Clima da UF para um produto e uma safra: média das células dos municípios que plantaram o produto, ponderada
+      pela área plantada na PAM do ano da safra. Só para produtos com `janela_jul_jun`. Fica nulo se algum município
+      plantado cair numa célula sem os 12 meses completos.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [uf, produto, safra]
+    columns:
+      - name: uf
+        description: '{{ doc(''col_uf'') }}'
+      - name: produto
+        description: '{{ doc(''col_produto'') }}'
+      - name: safra
+        description: Safra de julho a junho; a área plantada é a da PAM do ano da colheita.
+      - name: area_plantada_ha
+        description: Área plantada na UF, somada sobre os municípios com área positiva (ha).
+      - name: area_plantada_ha_com_clima
+        description: Parte dessa área cujas células têm os 12 meses completos (ha).
+      - name: precip_jul_jun_mm
+        description: >-
+          Chuva de julho a junho ponderada pela área plantada (mm); nula se alguma célula não tiver os 12 meses.
+      - name: temp_media_jul_jun_c
+        description: Temperatura média de julho a junho com a mesma ponderação e a mesma regra (°C).
+
+unit_tests:
+
+  - name: ultimo_levantamento_prefere_serie_historica_e_publicacao_recente
+    model: int_estimativa__ultimo_levantamento
+    given:
+      - input: ref('stg_agrobr__estimativa_safra')
+        rows:
+          - {fonte: conab, produto: soja, safra: 2021/22, uf: MT, levantamento: null, data_publicacao: null, producao_t: 100}
+          - {fonte: conab, produto: soja, safra: 2021/22, uf: MT, levantamento: 12, data_publicacao: '2022-09-13',
+            producao_t: 90}
+          - {fonte: conab, produto: soja, safra: 2024/25, uf: MT, levantamento: 12, data_publicacao: '2025-09-11',
+            producao_t: 50}
+          - {fonte: conab, produto: soja, safra: 2024/25, uf: MT, levantamento: 3, data_publicacao: '2025-12-11',
+            producao_t: 55}
+          - {fonte: conab, produto: soja, safra: 2024/25, uf: null, levantamento: 3, data_publicacao: '2025-12-11',
+            producao_t: 170}
+          - {fonte: ibge_lspa, produto: soja, safra: 2024/25, uf: MT, ano_lspa: 2025, mes_lspa: 8, producao_t: 60}
+          - {fonte: ibge_lspa, produto: soja, safra: 2024/25, uf: MT, ano_lspa: 2025, mes_lspa: 9, producao_t: 61}
+    expect:
+      rows:
+        - {fonte: conab, safra: 2021/22, uf: MT, origem_estimativa: serie_historica, producao_t: 100}
+        - {fonte: conab, safra: 2024/25, uf: MT, origem_estimativa: levantamento, producao_t: 55}
+        - {fonte: conab, safra: 2024/25, uf: null, origem_estimativa: levantamento, producao_t: 170}
+        - {fonte: ibge_lspa, safra: 2024/25, uf: MT, origem_estimativa: lspa, producao_t: 61}
