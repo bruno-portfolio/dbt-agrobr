@@ -1,0 +1,309 @@
+version: 2
+
+models:
+
+  - name: stg_agrobr__producao_anual
+    description: >
+      PAM do IBGE (com fallback CONAB) no grão do contrato `ibge.pam`: ano × produto × localidade. Acrescenta a
+      UF pelo código IBGE e as colunas nas unidades canônicas (t, kg/ha, BRL), que ficam nulas onde a unidade do
+      período não converte (ex.: laranja em mil frutos, moedas anteriores ao real).
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [ano, produto, localidade]
+      - dbt_utils.expression_is_true:
+          arguments: {expression: producao_t is not null or producao is null}
+          config: {severity: warn}
+      - dbt_utils.expression_is_true:
+          arguments: {expression: valor_producao_brl is not null or valor_producao is null}
+          config: {severity: warn}
+    columns:
+      - name: ano
+        description: '{{ doc(''col_ano'') }}'
+        data_tests: [not_null]
+      - name: produto
+        description: '{{ doc(''col_produto'') }}'
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('produtos'), field: produto}
+      - name: localidade
+        description: 'Nome da localidade como o SIDRA publica: "Brasil", o nome da UF ou "Município - UF".'
+      - name: localidade_cod
+        description: 'Código IBGE da localidade (D1C do SIDRA): 1 no Brasil, 2 dígitos na UF, 7 no município.'
+      - name: cod_municipio
+        description: Código IBGE do município (7 dígitos); nulo onde a linha não é de município.
+        data_tests:
+          - relationships:
+              arguments: {to: ref('municipios_ibge'), field: cod_municipio}
+      - name: uf
+        description: Sigla da UF pelo código IBGE da localidade; nula no nível Brasil e no fallback CONAB.
+        data_tests:
+          - relationships:
+              arguments: {to: ref('uf'), field: uf}
+      - name: area_plantada_ha
+        description: '{{ doc(''col_area_plantada_ha'') }}'
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0}
+      - name: area_colhida_ha
+        description: '{{ doc(''col_area_colhida_ha'') }}'
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0}
+      - name: producao
+        description: Quantidade produzida na unidade de `unidade_producao`.
+      - name: unidade_producao
+        description: Unidade de `producao`, convertida pela seed `unidades`.
+      - name: producao_t
+        description: Produção em toneladas.
+      - name: rendimento
+        description: Rendimento médio na unidade de `unidade_rendimento`.
+      - name: unidade_rendimento
+        description: Unidade de `rendimento`, convertida pela seed `unidades`.
+      - name: rendimento_kg_ha
+        description: Rendimento médio em kg/ha.
+      - name: valor_producao
+        description: Valor da produção na unidade de `unidade_valor_producao` (a PAM publica em mil reais).
+      - name: unidade_valor_producao
+        description: Unidade de `valor_producao`, convertida pela seed `unidades`.
+      - name: valor_producao_brl
+        description: Valor da produção em reais correntes do ano.
+      - name: condicao_produto
+        description: >-
+          Condição do produto medido: `beneficiado` no café (em grão beneficiado desde 2002; até 2001, em coco);
+          nula nas demais lavouras.
+      - name: fonte
+        description: Fonte da linha no agrobr (`ibge_pam` quando vem do SIDRA).
+
+  - name: stg_agrobr__estimativa_safra
+    description: >
+      Estimativas de safra da CONAB (levantamentos) e do LSPA/IBGE (meses), com áreas em ha e produção em t. `ano_final_safra`
+      é o 2º ano da safra.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [fonte, safra, produto, uf, levantamento, ano_lspa, mes_lspa]
+    columns: &colunas_stg_estimativa_safra
+      - name: fonte
+        description: >-
+          `conab` (Acompanhamento da Safra Brasileira de Grãos) ou `ibge_lspa` (Levantamento Sistemático da Produção
+          Agrícola).
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [conab, ibge_lspa]
+      - name: produto
+        description: '{{ doc(''col_produto'') }}'
+        data_tests:
+          - relationships:
+              arguments: {to: ref('produtos'), field: produto}
+      - name: safra
+        description: >-
+          Safra de julho a junho (AAAA/AA), como o agrobr normaliza; o trigo, que a CONAB rotula pelo ano da colheita,
+          vem como a safra que termina nesse ano.
+        data_tests: [not_null]
+      - name: ano_final_safra
+        description: Segundo ano da safra (2024 em 2023/24).
+        data_tests: [not_null]
+      - name: uf
+        description: Sigla da UF; nula no total Brasil.
+        data_tests:
+          - relationships:
+              arguments: {to: ref('uf'), field: uf}
+      - name: levantamento
+        description: Número do levantamento do boletim da CONAB que publicou a linha; nulo na série histórica.
+      - name: data_publicacao
+        description: Data de publicação do boletim; nula na série histórica.
+      - name: ano_lspa
+        description: Ano civil efetivo do LSPA; nulo na CONAB.
+      - name: mes_lspa
+        description: Mês efetivo do LSPA; não corresponde ao levantamento da CONAB.
+      - name: area_plantada_ha
+        description: Área plantada estimada (ha), convertida pela seed `unidades` a partir de `unidade_area` (mil
+          ha).
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0}
+      - name: area_colhida_ha
+        description: Área colhida estimada (ha), convertida pela seed `unidades` a partir de `unidade_area` (mil
+          ha).
+      - name: producao_t
+        description: >-
+          Produção estimada (t), convertida pela seed `unidades` a partir de `unidade_producao` (mil t); no algodão,
+          em caroço.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0}
+      - name: produtividade_kg_ha
+        description: Produtividade estimada (kg/ha), como a fonte publica.
+
+  - name: stg_agrobr__estimativa_levantamento
+    description: >
+      Cada levantamento mensal da CONAB desde a safra 2022/23, na edição original do boletim, nas mesmas unidades de
+      `stg_agrobr__estimativa_safra`.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [fonte, safra, produto, uf, levantamento]
+    columns: *colunas_stg_estimativa_safra
+
+  - name: stg_agrobr__preco_diario
+    description: >
+      Indicador diário do CEPEA/ESALQ por produto, com a praça do indicador (soja em Paranaguá/PR, milho em Campinas/SP,
+      café arábica em São Paulo/SP, café robusta no Espírito Santo, trigo no Paraná, algodão em pluma em São Paulo/SP).
+      `safra` é a de julho a junho que contém a data. `preco_brl_t` converte as unidades de massa da seed `unidades`;
+      fica nulo nas demais (ex.: BRL/@).
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [data, produto]
+    columns:
+      - name: data
+        description: Dia do indicador.
+        data_tests: [not_null]
+      - name: safra
+        description: Safra de julho a junho que contém a data.
+        data_tests: [not_null]
+      - name: produto
+        description: '{{ doc(''col_produto'') }}'
+      - name: praca
+        description: Praça do indicador; nome oficial e referência na seed `indicadores_cepea`.
+      - name: preco
+        description: Preço na unidade da coluna `unidade`.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0, inclusive: false}
+      - name: unidade
+        description: >-
+          Unidade publicada: `BRL/sc60kg` (soja, milho e cafés), `BRL/ton` (trigo) ou `cBRL/lb` (algodão, centavos
+          de real por libra-peso).
+      - name: preco_brl_t
+        description: Preço em BRL por tonelada.
+      - name: preco_usd
+        description: >-
+          Preço em dólar publicado na mesma linha pelo CEPEA; nulo quando não divulgado, inclusive nos dias obtidos
+          pela republicação.
+      - name: peso_medio_kg
+        description: Peso médio do bezerro (MS) na tabela auxiliar do CEPEA; nulo nos produtos deste projeto.
+      - name: metodologia
+        description: >-
+          `indicador_esalq` quando o dia veio do CEPEA; `CEPEA/ESALQ via Notícias Agrícolas` quando veio da republicação
+          do indicador.
+      - name: fonte
+        description: 'De onde o agrobr leu o dia: `cepea` ou `noticias_agricolas`.'
+
+  - name: stg_agrobr__clima_celula
+    description: >
+      Clima mensal do NASA POWER por célula da grade MERRA-2, com as unidades no nome das colunas. `safra` é a de
+      julho a junho que contém o mês. `dias_com_dado` menor que os dias do mês indica mês incompleto: a chuva do
+      mês é a soma dos dias com dado e sai menor que a real.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [celula_lat, celula_lon, mes]
+    columns:
+      - name: celula_lat
+        description: Latitude do centro da célula da grade MERRA-2 (múltiplo de 0,5°).
+      - name: celula_lon
+        description: Longitude do centro da célula da grade MERRA-2 (múltiplo de 0,625°).
+      - name: mes
+        description: Primeiro dia do mês.
+        data_tests: [not_null]
+      - name: safra
+        description: Safra de julho a junho que contém o mês.
+        data_tests: [not_null]
+      - name: precip_acum_mm
+        description: Chuva acumulada no mês (mm), soma diária do PRECTOTCORR.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0}
+      - name: temp_media_c
+        description: Média dos valores diários de T2M (°C).
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: -10, max_value: 45}
+      - name: temp_max_media_c
+        description: Média no mês das máximas diárias da temperatura a 2 m (°C), parâmetro T2M_MAX.
+      - name: temp_min_media_c
+        description: Média no mês das mínimas diárias da temperatura a 2 m (°C), parâmetro T2M_MIN.
+      - name: umidade_media_pct
+        description: Umidade relativa média a 2 m (%), parâmetro RH2M.
+      - name: radiacao_media_mj_m2_dia
+        description: >-
+          Radiação solar de onda curta que chega à superfície, média diária no mês (MJ/m²/dia), parâmetro ALLSKY_SFC_SW_DWN.
+      - name: vento_medio_ms
+        description: Velocidade média do vento a 2 m (m/s), parâmetro WS2M.
+      - name: dias_com_dado
+        description: Dias do mês com algum parâmetro preenchido; menos que os dias do mês indica mês incompleto.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0, max_value: 31}
+
+  - name: stg_agrobr__credito_rural
+    description: >
+      Crédito rural do SICOR (BCB) por safra de julho a junho, produto, UF, finalidade e programa, em BRL e ha.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [safra, produto, uf, finalidade, programa]
+    columns:
+      - name: safra
+        description: Safra de julho a junho que contém o mês de emissão do contrato (o SICOR não publica safra).
+        data_tests: [not_null]
+      - name: ano_final_safra
+        description: Segundo ano da safra (2024 em 2023/24).
+        data_tests: [not_null]
+      - name: produto
+        description: '{{ doc(''col_produto'') }}'
+        data_tests:
+          - relationships:
+              arguments: {to: ref('produtos'), field: produto}
+      - name: uf
+        description: Sigla da UF do contrato.
+        data_tests:
+          - relationships:
+              arguments: {to: ref('uf'), field: uf}
+      - name: finalidade
+        description: Finalidade do crédito no SICOR; o projeto carrega o custeio.
+      - name: agregacao
+        description: >-
+          `uf` (soma por UF) ou `programa` (soma por programa): dois níveis do mesmo dado; somar os dois contaria
+          o crédito duas vezes.
+      - name: programa
+        description: Programa de crédito; nulo nas linhas de `agregacao = 'uf'`.
+      - name: cd_programa
+        description: Código do programa no SICOR; nulo nas linhas de `agregacao = 'uf'`.
+      - name: qtd_contratos
+        description: Número de contratos.
+      - name: valor_brl
+        description: Valor contratado (BRL correntes).
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0}
+      - name: area_financiada_ha
+        description: Área financiada (ha); vazia nesta carga, por isso fora dos marts.
+      - name: fonte
+        description: 'Serviço de onde o agrobr leu a linha (`bcb_odata`: o OData do SICOR).'
+
+  - name: stg_agrobr__series_economicas
+    description: 'Séries do SGS do BCB (ex.: 433, IPCA, variação mensal em %), uma linha por código e data.'
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [codigo, data]
+    columns:
+      - name: codigo
+        description: 'Código da série no SGS do Banco Central (433: IPCA, variação mensal em %).'
+        data_tests: [not_null]
+      - name: nome_serie
+        description: Nome curto da série no agrobr (`ipca`).
+      - name: data
+        description: Início do período da observação (primeiro dia do mês nas séries mensais).
+        data_tests: [not_null]
+      - name: data_fim
+        description: Fim do período, quando a série publica; nulo no IPCA.
+      - name: valor
+        description: Valor da série no período; no IPCA, variação mensal em %.

@@ -1,0 +1,528 @@
+version: 2
+
+sources:
+
+  - name: agrobr
+    description: 'Datasets do agrobr 2.0.0: uma tabela por contrato.'
+    config:
+      meta: {agrobr_version: 2.0.0}
+      external_location: read_parquet('{{ var("agrobr_dados", "dados") }}/{name}/*.parquet', union_by_name = true)
+    tables:
+      - name: producao_anual
+        description: Produção agrícola anual consolidada por UF ou município
+        config:
+          meta:
+            dataset: producao_anual
+            contrato: ibge.pam
+            versao_contrato: '2.2'
+            chave_primaria: [ano, produto, localidade]
+            licenca: livre
+            licencas_por_fonte: {ibge_pam: livre, conab: livre}
+            instituicao: IBGE
+            garantias:
+              - Column names never change (additions only)
+              - '''ano'' is always a valid year (>= 1974)'
+              - Numeric values are always >= 0
+              - As unidades variam por período e são identificadas nas colunas unidade_*
+              - Café até 2001 é em coco; desde 2002 é beneficiado, sem conversão implícita
+              - '''fonte'' identifies ''ibge_pam'' or the ''conab'' fallback'
+        data_tests:
+          - dbt_utils.unique_combination_of_columns:
+              arguments:
+                combination_of_columns: [ano, produto, localidade]
+        columns:
+          - name: ano
+            description: '{{ doc(''col_ano'') }}'
+            data_type: bigint
+            config:
+              meta: {estavel: true, anulavel: false}
+            data_tests:
+              - not_null
+              - dbt_utils.accepted_range:
+                  arguments: {min_value: 1974}
+          - name: localidade
+            description: 'Nome da localidade como o SIDRA publica: "Brasil", o nome da UF ou "Município - UF".'
+            data_type: varchar
+            config:
+              meta: {estavel: true, anulavel: true}
+          - name: localidade_cod
+            data_type: bigint
+            description: Código IBGE da localidade (D1C do SIDRA); só nas linhas do IBGE.
+            config:
+              meta: {estavel: false, anulavel: false}
+          - name: produto
+            description: '{{ doc(''col_produto'') }}'
+            data_type: varchar
+            config:
+              meta: {estavel: true, anulavel: false}
+            data_tests: [not_null]
+          - name: area_plantada
+            description: Área plantada ou destinada à colheita (ha), variável 8331 da tabela 5457.
+            data_type: double
+            config:
+              meta: {estavel: true, anulavel: true, unidade: ha}
+            data_tests:
+              - dbt_utils.accepted_range:
+                  arguments: {min_value: 0}
+          - name: area_colhida
+            description: Área colhida (ha), variável 216 da tabela 5457.
+            data_type: double
+            config:
+              meta: {estavel: true, anulavel: true, unidade: ha}
+            data_tests:
+              - dbt_utils.accepted_range:
+                  arguments: {min_value: 0}
+          - name: producao
+            description: Quantidade produzida, variável 214, na unidade de `unidade_producao`.
+            data_type: double
+            config:
+              meta: {estavel: true, anulavel: true, unidade: unidade_producao}
+            data_tests:
+              - dbt_utils.accepted_range:
+                  arguments: {min_value: 0}
+          - name: rendimento
+            description: Rendimento médio, variável 112, na unidade de `unidade_rendimento`.
+            data_type: double
+            config:
+              meta: {estavel: true, anulavel: true, unidade: unidade_rendimento}
+            data_tests:
+              - dbt_utils.accepted_range:
+                  arguments: {min_value: 0}
+          - name: valor_producao
+            description: Valor da produção, variável 215, na unidade de `unidade_valor_producao`.
+            data_type: double
+            config:
+              meta: {estavel: true, anulavel: true, unidade: unidade_valor_producao}
+            data_tests:
+              - dbt_utils.accepted_range:
+                  arguments: {min_value: 0}
+          - name: fonte
+            description: Fonte da linha no agrobr (`ibge_pam` quando vem do SIDRA).
+            data_type: varchar
+            config:
+              meta: {estavel: true, anulavel: false}
+            data_tests: [not_null]
+          - name: unidade_producao
+            description: Unidade de `producao`.
+            data_type: varchar
+            config:
+              meta: {estavel: false, anulavel: true}
+          - name: unidade_rendimento
+            description: Unidade de `rendimento`.
+            data_type: varchar
+            config:
+              meta: {estavel: false, anulavel: true}
+          - name: unidade_valor_producao
+            description: Unidade de `valor_producao` (`mil_reais` na PAM).
+            data_type: varchar
+            config:
+              meta: {estavel: false, anulavel: true}
+          - name: condicao_produto
+            description: '`beneficiado` no café (em grão beneficiado desde 2002; até 2001, em coco); nula nas demais
+              lavouras.'
+            data_type: varchar
+            config:
+              meta: {estavel: false, anulavel: true}
+          - name: cod_municipio
+            data_type: bigint
+            description: >-
+              Código IBGE do município (7 dígitos), a chave comum dos datasets municipais; nulo onde a linha não
+              é de município.
+            config:
+              meta: {estavel: false, anulavel: true}
+      - name: estimativa_safra
+        description: Estimativas de safra por levantamento CONAB ou mês LSPA
+        config:
+          meta:
+            dataset: estimativa_safra
+            contrato: estimativa_safra
+            versao_contrato: '3.1'
+            chave_primaria: [fonte, safra, produto, uf, levantamento, ano_lspa, mes_lspa]
+            licenca: livre
+            licencas_por_fonte: {conab: livre, ibge_lspa: livre}
+            instituicao: CONAB
+            garantias:
+              - Chave distingue fontes, levantamentos CONAB e meses LSPA
+              - Seleção temporal explícita nunca é substituída por outra referência em fallback
+              - LSPA conserva ano e mês efetivamente retornados; safra usa o ano civil como ano final
+              - Sub-safras LSPA incompletas não são apresentadas como totais
+              - >-
+                Áreas em mil ha, produção em mil ton e produtividade em kg/ha nas 2 fontes; unidade_area e unidade_producao
+                declaram a escala
+              - Valores ausentes não são convertidos em zero
+        data_tests:
+          - dbt_utils.unique_combination_of_columns:
+              arguments:
+                combination_of_columns: [fonte, safra, produto, uf, levantamento, ano_lspa, mes_lspa]
+        columns: &colunas_estimativa_safra
+          - name: fonte
+            description: >-
+              `conab` (Acompanhamento da Safra Brasileira de Grãos) ou `ibge_lspa` (Levantamento Sistemático da
+              Produção Agrícola).
+            data_type: varchar
+            config:
+              meta: {estavel: true, anulavel: false}
+            data_tests: [not_null]
+          - name: produto
+            description: '{{ doc(''col_produto'') }}'
+            data_type: varchar
+            config:
+              meta: {estavel: true, anulavel: false}
+            data_tests: [not_null]
+          - name: safra
+            description: >-
+              Safra de julho a junho (AAAA/AA), como o agrobr normaliza; o trigo, que a CONAB rotula pelo ano da
+              colheita, vem como a safra que termina nesse ano.
+            data_type: varchar
+            config:
+              meta: {estavel: true, anulavel: false}
+            data_tests: [not_null]
+          - name: uf
+            description: Sigla da UF; nula no total Brasil.
+            data_type: varchar
+            config:
+              meta: {estavel: true, anulavel: true}
+          - name: area_plantada
+            description: Área plantada estimada, na unidade de `unidade_area`.
+            data_type: double
+            config:
+              meta: {estavel: true, anulavel: true, unidade: mil_ha}
+            data_tests:
+              - dbt_utils.accepted_range:
+                  arguments: {min_value: 0}
+          - name: area_colhida
+            description: Área colhida estimada, na unidade de `unidade_area`.
+            data_type: double
+            config:
+              meta: {estavel: true, anulavel: true, unidade: mil_ha}
+            data_tests:
+              - dbt_utils.accepted_range:
+                  arguments: {min_value: 0}
+          - name: produtividade
+            description: Produtividade estimada (kg/ha).
+            data_type: double
+            config:
+              meta: {estavel: true, anulavel: true, unidade: kg/ha}
+            data_tests:
+              - dbt_utils.accepted_range:
+                  arguments: {min_value: 0}
+          - name: producao
+            description: Produção estimada, na unidade de `unidade_producao`.
+            data_type: double
+            config:
+              meta: {estavel: true, anulavel: true, unidade: mil_ton}
+            data_tests:
+              - dbt_utils.accepted_range:
+                  arguments: {min_value: 0}
+          - name: levantamento
+            description: Número do levantamento do boletim da CONAB que publicou a linha; nulo na série histórica.
+            data_type: bigint
+            config:
+              meta: {estavel: true, anulavel: true}
+            data_tests:
+              - dbt_utils.accepted_range:
+                  arguments: {min_value: 1, max_value: 12}
+          - name: data_publicacao
+            description: Data de publicação do boletim; nula na série histórica.
+            data_type: date
+            config:
+              meta: {estavel: true, anulavel: true}
+          - name: ano_lspa
+            data_type: bigint
+            description: Ano civil efetivo do LSPA; nulo para CONAB
+            config:
+              meta: {estavel: true, anulavel: true}
+            data_tests:
+              - dbt_utils.accepted_range:
+                  arguments: {min_value: 1900}
+          - name: mes_lspa
+            data_type: bigint
+            description: Mês efetivo do LSPA; não corresponde ao levantamento CONAB
+            config:
+              meta: {estavel: true, anulavel: true}
+            data_tests:
+              - dbt_utils.accepted_range:
+                  arguments: {min_value: 1, max_value: 12}
+          - name: unidade_producao
+            data_type: varchar
+            description: 'Unidade da produção: mil_ton nas 2 fontes, como em conab.brasil_total'
+            config:
+              meta: {estavel: false, anulavel: false}
+          - name: unidade_area
+            data_type: varchar
+            description: 'Unidade das áreas plantada e colhida: mil_ha nas 2 fontes'
+            config:
+              meta: {estavel: false, anulavel: false}
+      - name: estimativa_levantamento
+        description: >-
+          Cada levantamento mensal da CONAB desde a safra 2022/23, na edição original do boletim, com o contrato
+          `estimativa_safra`. Guarda as revisões que `estimativa_safra`, só com a publicação mais recente de cada
+          safra, não guarda.
+        config:
+          meta:
+            dataset: estimativa_safra
+            contrato: estimativa_safra
+            versao_contrato: '3.1'
+            chave_primaria: [fonte, safra, produto, uf, levantamento]
+            licenca: livre
+            licencas_por_fonte: {conab: livre}
+            instituicao: CONAB
+          loaded_at_field: cast(data_publicacao as timestamp)
+          freshness:
+            warn_after: {count: 45, period: day}
+            error_after: {count: 75, period: day}
+        data_tests:
+          - dbt_utils.unique_combination_of_columns:
+              arguments:
+                combination_of_columns: [fonte, safra, produto, uf, levantamento]
+        columns: *colunas_estimativa_safra
+      - name: preco_diario
+        description: Preço diário spot de commodities agrícolas brasileiras
+        config:
+          loaded_at_field: cast(data as timestamp)
+          freshness:
+            warn_after: {count: 7, period: day}
+            error_after: {count: 35, period: day}
+          meta:
+            dataset: preco_diario
+            contrato: cepea.indicador
+            versao_contrato: '1.1'
+            chave_primaria: [data, produto]
+            licenca: nc
+            licencas_por_fonte: {cepea: nc, noticias_agricolas: zona_cinza}
+            instituicao: CEPEA/ESALQ/USP
+            garantias:
+              - Column names never change (additions only)
+              - Types only widen (int -> float, str -> categorical)
+              - Dates always in local timezone (Sao Paulo)
+              - Units explicit in 'unidade' column
+              - '''valor'' is always positive'
+              - '''data'' is always a valid business day'
+        data_tests:
+          - dbt_utils.unique_combination_of_columns:
+              arguments:
+                combination_of_columns: [data, produto]
+        columns:
+          - name: data
+            description: Dia do indicador.
+            data_type: date
+            config:
+              meta: {estavel: true, anulavel: false}
+            data_tests: [not_null]
+          - name: produto
+            description: '{{ doc(''col_produto'') }}'
+            data_type: varchar
+            config:
+              meta: {estavel: true, anulavel: false}
+            data_tests: [not_null]
+          - name: praca
+            description: Praça do indicador.
+            data_type: varchar
+            config:
+              meta: {estavel: true, anulavel: true}
+          - name: valor
+            description: Preço na unidade de `unidade`; no algodão, em centavos de real por libra-peso.
+            data_type: double
+            config:
+              meta: {estavel: true, anulavel: false, unidade: BRL por unidade da coluna unidade; algodão em centavos
+                  de BRL por libra-peso (cBRL/lb)}
+            data_tests:
+              - not_null
+              - dbt_utils.accepted_range:
+                  arguments: {min_value: 0}
+          - name: unidade
+            description: >-
+              Unidade publicada: `BRL/sc60kg` (soja, milho e cafés), `BRL/ton` (trigo) ou `cBRL/lb` (algodão, centavos
+              de real por libra-peso).
+            data_type: varchar
+            config:
+              meta: {estavel: true, anulavel: false}
+            data_tests: [not_null]
+          - name: fonte
+            description: 'De onde o agrobr leu o dia: `cepea` ou `noticias_agricolas`.'
+            data_type: varchar
+            config:
+              meta: {estavel: true, anulavel: false}
+            data_tests: [not_null]
+          - name: metodologia
+            description: >-
+              `indicador_esalq` quando o dia veio do CEPEA; `CEPEA/ESALQ via Notícias Agrícolas` quando veio da
+              republicação do indicador.
+            data_type: varchar
+            config:
+              meta: {estavel: false, anulavel: true}
+          - name: anomalies
+            description: Regras da validação estatística do agrobr que marcaram o dia; nula sem marcação.
+            data_type: varchar
+            config:
+              meta: {estavel: false, anulavel: true}
+          - name: valor_usd
+            data_type: double
+            description: Preço em dólar publicado na mesma linha pelo CEPEA; nulo quando a fonte não divulga.
+            config:
+              meta: {estavel: false, anulavel: true, unidade: USD}
+            data_tests:
+              - dbt_utils.accepted_range:
+                  arguments: {min_value: 0}
+          - name: peso_medio_kg
+            data_type: double
+            description: 'Bezerro MS: peso médio da tabela auxiliar do CEPEA; nulo para os demais produtos.'
+            config:
+              meta: {estavel: false, anulavel: true, unidade: kg}
+            data_tests:
+              - dbt_utils.accepted_range:
+                  arguments: {min_value: 0}
+      - name: credito_rural
+        description: Crédito rural SICOR/BCB por UF ou programa, com fallback BigQuery
+        config:
+          meta:
+            dataset: credito_rural
+            contrato: bcb.credito_rural
+            versao_contrato: '2.0'
+            chave_primaria: [safra, produto, uf, finalidade, programa]
+            licenca: livre
+            licencas_por_fonte: {bcb: livre}
+            instituicao: BCB/SICOR
+            garantias:
+              - Column names never change (additions only)
+              - '''safra'' always matches pattern YYYY/YY'
+              - '''uf'' is always a valid Brazilian state code when present'
+              - Numeric values are always >= 0
+        data_tests:
+          - dbt_utils.unique_combination_of_columns:
+              arguments:
+                combination_of_columns: [safra, produto, uf, finalidade, programa]
+        columns:
+          - name: safra
+            data_type: varchar
+            description: >-
+              Safra de julho a junho do mês de emissão, no formato AAAA/AA (2023/24) da camada; o SICOR não publica
+              safra
+            config:
+              meta: {estavel: true, anulavel: false}
+            data_tests: [not_null]
+          - name: produto
+            description: '{{ doc(''col_produto'') }}'
+            data_type: varchar
+            config:
+              meta: {estavel: true, anulavel: false}
+            data_tests: [not_null]
+          - name: uf
+            description: Sigla da UF do contrato.
+            data_type: varchar
+            config:
+              meta: {estavel: true, anulavel: true}
+          - name: finalidade
+            description: Finalidade do crédito no SICOR; o projeto carrega o custeio.
+            data_type: varchar
+            config:
+              meta: {estavel: true, anulavel: false}
+            data_tests: [not_null]
+          - name: agregacao
+            description: >-
+              `uf` (soma por UF) ou `programa` (soma por programa): dois níveis do mesmo dado; somar os dois contaria
+              o crédito duas vezes.
+            data_type: varchar
+            config:
+              meta: {estavel: true, anulavel: false}
+            data_tests: [not_null]
+          - name: programa
+            description: Programa de crédito; nulo nas linhas de `agregacao = 'uf'`.
+            data_type: varchar
+            config:
+              meta: {estavel: true, anulavel: true}
+          - name: cd_programa
+            description: Código do programa no SICOR; nulo nas linhas de `agregacao = 'uf'`.
+            data_type: varchar
+            config:
+              meta: {estavel: true, anulavel: true}
+          - name: qtd_contratos
+            description: Número de contratos.
+            data_type: bigint
+            config:
+              meta: {estavel: true, anulavel: true}
+            data_tests:
+              - dbt_utils.accepted_range:
+                  arguments: {min_value: 0}
+          - name: valor
+            description: Valor contratado (BRL correntes).
+            data_type: double
+            config:
+              meta: {estavel: true, anulavel: true, unidade: BRL}
+            data_tests:
+              - dbt_utils.accepted_range:
+                  arguments: {min_value: 0}
+          - name: area_financiada
+            description: Área financiada (ha).
+            data_type: double
+            config:
+              meta: {estavel: true, anulavel: true, unidade: ha}
+            data_tests:
+              - dbt_utils.accepted_range:
+                  arguments: {min_value: 0}
+          - name: fonte
+            description: 'Serviço de onde o agrobr leu a linha (`bcb_odata`: o OData do SICOR).'
+            data_type: varchar
+            config:
+              meta: {estavel: true, anulavel: false}
+            data_tests: [not_null]
+      - name: bcb_sgs
+        description: Séries econômicas do Sistema Gerenciador de Séries Temporais do Banco Central
+        config:
+          loaded_at_field: cast(data as timestamp)
+          freshness:
+            warn_after: {count: 60, period: day}
+            error_after: {count: 90, period: day}
+          meta:
+            dataset: series_economicas
+            contrato: bcb.sgs
+            versao_contrato: '3.0'
+            chave_primaria: [codigo, data]
+            licenca: livre
+            licencas_por_fonte: {bcb_sgs: livre}
+            instituicao: BCB
+            garantias:
+              - Quatro colunas estáveis, inclusive em consultas sem valores declarados pela fonte
+              - 'data_fim opcional, presente quando a fonte publica dataFim (fim do período, ex.: TR)'
+              - Valores finitos, incluindo negativos legítimos; ausências explícitas permanecem nulas
+              - Uma observação por código e referência, ordenada antes de aplicar ultimos
+              - >-
+                Referências repetidas entre blocos só são reconciliadas quando o valor coincide, com origem preservada
+              - Duplicata no mesmo corpo ou conflito entre blocos interrompe a aquisição
+              - Datas publicadas de referência não são cortadas por uma regra diária inferida
+              - Metadados distinguem blocos obtidos de completude da série, que não tem contagem global comprovada
+        data_tests:
+          - dbt_utils.unique_combination_of_columns:
+              arguments:
+                combination_of_columns: [codigo, data]
+        columns:
+          - name: data
+            description: Início do período da observação (primeiro dia do mês nas séries mensais).
+            data_type: date
+            config:
+              meta: {estavel: true, anulavel: false}
+            data_tests: [not_null]
+          - name: valor
+            description: Valor da série no período; no IPCA, variação mensal em %.
+            data_type: double
+            config:
+              meta: {estavel: true, anulavel: true}
+          - name: codigo
+            description: 'Código da série no SGS do Banco Central (433: IPCA, variação mensal em %).'
+            data_type: bigint
+            config:
+              meta: {estavel: true, anulavel: false}
+            data_tests:
+              - not_null
+              - dbt_utils.accepted_range:
+                  arguments: {min_value: 1, max_value: 9223372036854775807}
+          - name: nome_serie
+            description: Nome curto da série no agrobr (`ipca`).
+            data_type: varchar
+            config:
+              meta: {estavel: true, anulavel: true}
+          - name: data_fim
+            description: Fim do período, quando a série publica; nulo no IPCA.
+            data_type: date
+            config:
+              meta: {estavel: false, anulavel: true}

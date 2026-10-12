@@ -1,0 +1,58 @@
+version: 2
+
+sources:
+
+  - name: agrobr_pontos
+    description: >
+      Séries por ponto do agrobr 2.0.0, gravadas por `carga/carregar.py clima`: uma chamada a `agrobr.nasa_power.clima_ponto`
+      por célula da grade MERRA-2 (0,5° de latitude × 0,625° de longitude) que contém as coordenadas de algum município
+      da seed `municipios_ibge`.
+    config:
+      external_location: read_parquet('{{ var("agrobr_dados", "dados") }}/{name}/*.parquet', union_by_name = true)
+      meta: {agrobr_version: 2.0.0}
+    tables:
+      - name: clima_celula
+        description: >
+          Clima mensal do NASA POWER (agregação mensal do agrobr sobre os dias do mês) no centro de cada célula.
+          Qualquer ponto dentro da célula devolve o mesmo valor meteorológico; a radiação vem de uma grade mais
+          grossa (CERES), compartilhada por células vizinhas.
+        config:
+          meta: {licenca: livre, instituicao: NASA}
+        data_tests:
+          - dbt_utils.unique_combination_of_columns:
+              arguments:
+                combination_of_columns: [celula_lat, celula_lon, mes]
+        columns:
+          - name: mes
+            description: Primeiro dia do mês.
+            data_tests: [not_null]
+          - name: celula_lat
+            description: Latitude do centro da célula, múltiplo de 0,5°.
+            data_tests: [not_null]
+          - name: celula_lon
+            description: Longitude do centro da célula, múltiplo de 0,625°.
+            data_tests: [not_null]
+          - name: precip_acum_mm
+            description: Precipitação acumulada no mês (mm), parâmetro PRECTOTCORR.
+          - name: temp_media
+            description: Média mensal da temperatura do ar a 2 m (°C), parâmetro T2M.
+          - name: dias
+            description: Dias do mês com dado.
+          - name: temp_max_media
+            description: Média no mês das máximas diárias da temperatura a 2 m (°C), T2M_MAX.
+          - name: temp_min_media
+            description: Média no mês das mínimas diárias da temperatura a 2 m (°C), T2M_MIN.
+          - name: umidade_media
+            description: Umidade relativa média a 2 m (%), RH2M.
+          - name: radiacao_media_mj
+            description: Radiação solar de onda curta na superfície, média diária no mês (MJ/m²/dia), ALLSKY_SFC_SW_DWN.
+          - name: vento_medio_ms
+            description: Velocidade média do vento a 2 m (m/s), WS2M.
+          - name: lat
+            description: Latitude consultada (o centro da célula).
+          - name: lon
+            description: Longitude consultada (o centro da célula).
+          - name: data_inicio
+            description: Primeiro dia do mês com dado.
+          - name: data_fim
+            description: Último dia do mês com dado.
