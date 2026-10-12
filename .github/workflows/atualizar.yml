@@ -1,0 +1,144 @@
+name: atualizar
+
+on:
+  schedule:
+    - cron: "0 9 16 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: atualizar
+  cancel-in-progress: false
+
+env:
+  DBT_PROFILES_DIR: profiles
+  DBT_SEND_ANONYMOUS_USAGE_STATS: "false"
+  PYTHONUTF8: "1"
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    permissions:
+      contents: write
+      actions: write
+    outputs:
+      publicar: ${{ steps.painel.outputs.mudou }}
+      falhas: ${{ steps.carga.outputs.falhas }}
+      frescor: ${{ steps.frescor.outputs.codigo }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-carga.txt
+      - name: Instala o dbt e, num venv à parte, o agrobr
+        run: |
+          pip install -r requirements.txt
+          python -m venv .venv-carga
+          .venv-carga/bin/pip install -r requirements-carga.txt
+      - name: Restaura os dados da última carga
+        run: |
+          gh release download dados --pattern dados.tar.gz
+          tar -xzf dados.tar.gz
+          rm dados.tar.gz
+      - name: Carrega o que mudou nas fontes
+        id: carga
+        run: |
+          falhas=""
+          for grupo in ipca cepea conab sicor pam; do
+            .venv-carga/bin/python carga/carregar.py "$grupo" | tee -a carga.log || falhas="$falhas $grupo"
+          done
+          set +e
+          .venv-carga/bin/python carga/carregar.py clima --limite-minutos 240 | tee -a carga.log
+          saida=${PIPESTATUS[0]}
+          set -e
+          [ "$saida" -eq 75 ] && echo "clima_pendente=true" >> "$GITHUB_OUTPUT"
+          [ "$saida" -ne 0 ] && [ "$saida" -ne 75 ] && falhas="$falhas clima"
+          { echo "### Carga"; echo; grep -E "^[a-z]+: [0-9]+ falhas" carga.log | sed 's/^/- /' || true; } >> "$GITHUB_STEP_SUMMARY"
+          echo "falhas=${falhas# }" >> "$GITHUB_OUTPUT"
+      - run: dbt deps
+      - name: Confere o frescor das fontes
+        id: frescor
+        run: |
+          set +e
+          dbt source freshness
+          echo "codigo=$?" >> "$GITHUB_OUTPUT"
+      - name: Build com os dados reais
+        run: dbt build
+      - name: Exporta o painel
+        run: python painel/exportar.py --sem-malhas
+      - name: Guarda os dados para a próxima execução
+        run: |
+          tar --exclude=dados/_erros.jsonl -czf dados.tar.gz dados
+          gh release upload dados dados.tar.gz --clobber
+      - name: Publica os dados do painel
+        id: painel
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add painel/dados
+          if git diff --cached --quiet; then
+            echo "mudou=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git commit -m "chore: atualização automática dos dados ($(date -u +%F))"
+          git pull --rebase origin main
+          git push origin HEAD:main
+          echo "mudou=true" >> "$GITHUB_OUTPUT"
+      - name: Continua o clima em outra execução
+        if: steps.carga.outputs.clima_pendente == 'true'
+        run: gh workflow run atualizar.yml --ref main
+
+  publicar:
+    needs: atualizar
+    if: needs.atualizar.outputs.publicar == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/docs.yml
+    with:
+      ref: main
+
+  avisar:
+    needs: [atualizar, publicar]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RESULTADO: ${{ needs.atualizar.result }}
+      PUBLICACAO: ${{ needs.publicar.result }}
+      FALHAS: ${{ needs.atualizar.outputs.falhas }}
+      FRESCOR: ${{ needs.atualizar.outputs.frescor }}
+      EXECUCAO: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Abre, comenta ou fecha a issue de acompanhamento
+        run: |
+          titulo="Atualização automática com problema"
+          aberta=$(gh issue list --state open --search "in:title \"$titulo\"" --json number --jq '.[0].number // empty')
+          problemas=()
+          [ "$RESULTADO" = "success" ] || problemas+=("o job de atualização terminou como \`$RESULTADO\`")
+          [ "$PUBLICACAO" != "failure" ] || problemas+=("a publicação no Pages falhou")
+          [ -z "$FALHAS" ] || problemas+=("cargas com falha (mantido o dado anterior): $FALHAS")
+          [ "${FRESCOR:-0}" = "0" ] || problemas+=("\`dbt source freshness\` acusou fonte vencida")
+          if [ ${#problemas[@]} -eq 0 ]; then
+            if [ -n "$aberta" ]; then gh issue close "$aberta" --comment "Resolvido em $EXECUCAO"; fi
+            exit 0
+          fi
+          corpo=$(printf -- '- %s\n' "${problemas[@]}"; printf '\nExecução: %s\n' "$EXECUCAO")
+          if [ -n "$aberta" ]; then
+            gh issue comment "$aberta" --body "$corpo"
+          else
+            gh issue create --title "$titulo" --body "$corpo"
+          fi

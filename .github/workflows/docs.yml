@@ -1,0 +1,58 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: ramo a publicar (o chamador passa main para pegar o commit que acabou de fazer)
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  DBT_PROFILES_DIR: profiles
+  DBT_SEND_ANONYMOUS_USAGE_STATS: "false"
+  FIXTURE: "{agrobr_dados: fixtures/dados}"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: dbt deps
+      - run: dbt build --vars "$FIXTURE"
+      - run: dbt docs generate --static --vars "$FIXTURE"
+      - run: mkdir -p site/dbt && cp -r painel/. site/ && rm site/exportar.py && cp target/static_index.html site/dbt/index.html
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
