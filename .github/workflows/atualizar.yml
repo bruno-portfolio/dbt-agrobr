@@ -51,6 +51,7 @@ jobs:
           rm dados.tar.gz
       - name: Carrega o que mudou nas fontes
         id: carga
+        shell: bash
         run: |
           falhas=""
           for grupo in ipca cepea conab sicor pam; do
