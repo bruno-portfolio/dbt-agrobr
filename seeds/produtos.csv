@@ -1,0 +1,14 @@
+produto,nome,nome_pam,codigo_pam,grupo_conab,deslocamento_ano,calendario,janela_jul_jun
+soja,Soja,Soja (em grão),40124,verao,1,safra,true
+milho,Milho,Milho (em grão),40122,verao,1,safra,true
+arroz,Arroz,Arroz (em casca),40102,verao,1,safra,true
+feijao,Feijão,Feijão (em grão),40112,verao,1,safra,true
+algodao,Algodão,Algodão herbáceo (em caroço),40099,verao,1,safra,true
+trigo,Trigo,Trigo (em grão),40127,inverno,1,safra,false
+sorgo,Sorgo,,,verao,1,safra,false
+cafe,Café,Café (em grão) Total,40139,,,ano_civil,false
+cacau,Cacau,Cacau (em amêndoa),40138,,,ano_civil,false
+cana,Cana-de-açúcar,Cana-de-açúcar,40106,,,ano_civil,false
+mandioca,Mandioca,Mandioca,40119,,,ano_civil,false
+laranja,Laranja,Laranja,40151,,,ano_civil,false
+cafe_robusta,Café robusta (conilon),,,,,ano_civil,false

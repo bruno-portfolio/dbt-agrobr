@@ -1,0 +1,7 @@
+produto,praca,indicador,referencia,unidade_publicada,observacao
+soja,Paranaguá/PR,Indicador da Soja CEPEA/ESALQ - Paranaguá,Paranaguá (PR),R$ por saca de 60 kg,
+milho,Campinas/SP,Indicador do Milho ESALQ/BM&FBovespa,região de Campinas (SP),R$ por saca de 60 kg,"à vista, sem ICMS"
+cafe,São Paulo/SP,Indicador do Café Arábica CEPEA/ESALQ,posto na cidade de São Paulo,R$ por saca de 60 kg,"tipo 6, bebida dura para melhor"
+cafe_robusta,Espírito Santo,Indicador do Café Robusta CEPEA/ESALQ,a retirar na origem (ES),R$ por saca de 60 kg,"tipo 6, peneira 13 acima"
+trigo,Paraná,Preço Médio do Trigo CEPEA/ESALQ - Paraná,Paraná,R$ por tonelada,"trigo pão ou melhorador; prazo descontado pela NPR até 30/11/2020 e pelo CDI desde 01/12/2020"
+algodao,São Paulo/SP,Indicador do Algodão em Pluma CEPEA/ESALQ - Prazo de 8 dias,mesorregião da cidade de São Paulo,centavos de R$ por libra-peso,"tipo 41-4, pagamento em 8 dias; desconto pela NPR até 11/12/2020 e pelo CDI depois"

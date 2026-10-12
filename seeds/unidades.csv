@@ -1,0 +1,13 @@
+de,para,fator
+ha,ha,1
+mil_ha,ha,1000
+ton,t,1
+mil_ton,t,1000
+kg/ha,kg/ha,1
+BRL,BRL,1
+mil_reais,BRL,1000
+BRL/ton,BRL/t,1
+BRL/kg,BRL/t,1000
+BRL/sc60kg,BRL/t,16.666666666666668
+BRL/sc50kg,BRL/t,20
+cBRL/lb,BRL/t,22.046226218487757

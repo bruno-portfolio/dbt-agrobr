@@ -1,0 +1,202 @@
+version: 2
+
+seeds:
+  - name: uf
+    description: As 27 UFs com o código IBGE, de `agrobr.normalize.regions.UFS` (agrobr 2.0.0).
+    config:
+      column_types:
+        codigo_uf: integer
+        uf: varchar
+        nome: varchar
+        regiao: varchar
+    columns:
+      - name: codigo_uf
+        description: Código IBGE da UF (2 dígitos).
+        data_tests: [unique, not_null]
+      - name: uf
+        description: Sigla da UF.
+        data_tests: [unique, not_null]
+      - name: nome
+        description: Nome da UF.
+        data_tests: [not_null]
+      - name: regiao
+        description: Grande região do IBGE.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [Norte, Nordeste, Centro-Oeste, Sudeste, Sul]
+
+  - name: municipios_ibge
+    description: >
+      Municípios com código IBGE de 7 dígitos, nome, UF e coordenadas, de
+      `agrobr/normalize/_municipios_ibge.json` (agrobr 2.0.0).
+    config:
+      column_types:
+        cod_municipio: bigint
+        nome: varchar
+        uf: varchar
+        lat: double
+        lon: double
+    columns:
+      - name: cod_municipio
+        description: Código IBGE do município (7 dígitos).
+        data_tests:
+          - unique
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1000000
+                max_value: 9999999
+      - name: nome
+        description: Nome do município.
+        data_tests: [not_null]
+      - name: uf
+        description: Sigla da UF do município.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('uf')
+                field: uf
+      - name: lat
+        description: Latitude do ponto de referência do município na base do agrobr (graus decimais).
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -90
+                max_value: 90
+      - name: lon
+        description: Longitude do ponto de referência do município na base do agrobr (graus decimais).
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -180
+                max_value: 180
+
+  - name: unidades
+    description: >
+      Fator para converter um valor da unidade `de` para a unidade `para` (valor_para = valor_de × fator).
+      As unidades de origem são as que os contratos do agrobr publicam; os destinos são as unidades
+      canônicas do projeto (ha, t, kg/ha, BRL, BRL/t). Libra-peso = 0,45359237 kg.
+    config:
+      column_types:
+        de: varchar
+        para: varchar
+        fator: double
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [de, para]
+    columns:
+      - name: de
+        description: Unidade de origem, como os contratos do agrobr a publicam.
+        data_tests: [not_null]
+      - name: para
+        description: Unidade canônica do projeto.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [ha, t, kg/ha, BRL, BRL/t]
+      - name: fator
+        description: 'Multiplicador: valor em `para` = valor em `de` × `fator`.'
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                inclusive: false
+
+  - name: produtos
+    description: >
+      Os 12 produtos do projeto (mais `cafe_robusta`, só com preço), o nome oficial na PAM (tabela 5457 do SIDRA, classificação 782) e como cada
+      produto se liga ao tempo. `calendario = safra`: grãos do boletim da CONAB, com safra de julho a
+      junho e ano civil da PAM = ano inicial da safra + `deslocamento_ano` (1: a safra 2023/24 corresponde à PAM
+      2024). A CONAB rotula o trigo pelo ano da colheita ("2024" na série histórica, "Safra 2026" no boletim da
+      safra 2025/26); o projeto o representa como a safra que termina nesse ano (2023/24), como os demais grãos.
+      Conferido com dado: o total da CONAB fica entre 0,98 e 1,05 da PAM do ano da colheita em 8 das 10 safras de
+      2015/16 a 2024/25; as exceções são 2018/19 (0,92) e 2020/21 (0,97).
+      `calendario = ano_civil`: lavouras permanentes e semiperenes (café, cacau, cana, mandioca, laranja), cuja
+      produção na PAM só entra por ano civil, sem safra; o crédito de custeio delas segue a safra de julho a junho
+      do SICOR, como o de todos os produtos. `janela_jul_jun` diz se o clima somado de julho a junho é comparado
+      com o rendimento: vale para os grãos plantados na primavera e no verão, como ano agrícola descritivo (parte
+      da colheita do milho de segunda safra, do feijão de terceira safra e do algodão cai depois de junho); não
+      vale para o trigo (planta de maio a julho e colhe de setembro a dezembro do 2º ano) nem para o sorgo, de
+      segunda safra.
+    config:
+      column_types:
+        produto: varchar
+        nome: varchar
+        nome_pam: varchar
+        codigo_pam: integer
+        grupo_conab: varchar
+        deslocamento_ano: integer
+        calendario: varchar
+        janela_jul_jun: boolean
+    columns:
+      - name: produto
+        description: Identificador do produto no agrobr.
+        data_tests: [unique, not_null]
+      - name: nome
+        description: Nome de exibição.
+        data_tests: [unique, not_null]
+      - name: nome_pam
+        description: Nome da categoria na PAM; nulo para o sorgo, que o agrobr não lê da PAM.
+      - name: codigo_pam
+        description: Código da categoria na classificação 782 da tabela 5457.
+      - name: grupo_conab
+        description: Grupo do boletim de grãos da CONAB; nulo fora do boletim.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [verao, inverno]
+      - name: deslocamento_ano
+        description: Anos entre o ano inicial da safra e o ano civil da PAM; nulo quando `calendario = ano_civil`.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [1]
+                quote: false
+      - name: calendario
+        description: '`safra` (julho a junho) ou `ano_civil`.'
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [safra, ano_civil]
+      - name: janela_jul_jun
+        description: Se o clima de julho a junho é comparado com o rendimento (grãos plantados na primavera e no verão).
+        data_tests: [not_null]
+
+  - name: indicadores_cepea
+    description: >
+      Nome oficial, referência geográfica e unidade de cada indicador do CEPEA que o agrobr lê, copiados das
+      páginas de indicadores do CEPEA em 11/10/2026. `praca` é o rótulo que o agrobr grava.
+    config:
+      column_types:
+        produto: varchar
+        praca: varchar
+        indicador: varchar
+        referencia: varchar
+        unidade_publicada: varchar
+        observacao: varchar
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [produto, praca]
+    columns:
+      - name: produto
+        description: Identificador do produto no agrobr.
+        data_tests: [not_null]
+      - name: praca
+        description: Rótulo da praça que o agrobr grava no preço diário.
+      - name: indicador
+        description: Nome do indicador como o CEPEA publica.
+        data_tests: [not_null]
+      - name: referencia
+        description: Local a que o preço se refere, nas palavras do CEPEA.
+      - name: unidade_publicada
+        description: Unidade em que o CEPEA publica o indicador.
+      - name: observacao
+        description: Especificação do produto e mudanças de metodologia citadas pelo CEPEA.
