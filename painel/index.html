@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>dbt-agrobr · painel</title>
+  <meta name="description" content="Produção, estimativas de safra, preços, crédito rural e clima das principais lavouras do Brasil, a partir de dados públicos do IBGE, CONAB, CEPEA, Banco Central e NASA, transformados com dbt.">
+  <link rel="stylesheet" href="assets/painel.css?v=2026-10-12c">
+  <script src="assets/vendor/echarts-6.1.0/echarts.min.js" defer></script>
+  <script src="assets/painel.js?v=2026-10-12c" defer></script>
+</head>
+<body>
+  <header class="topo">
+    <div class="envelope topo-interno">
+      <a class="etiqueta-lamina" href="#visao"><span>Lâmina BR</span><span>dbt-agrobr · lavouras do Brasil</span></a>
+      <nav class="abas" aria-label="Seções">
+        <a href="#visao" data-aba="visao">Visão geral</a>
+        <a href="#producao" data-aba="producao">Produção</a>
+        <a href="#municipios" data-aba="municipios">Municípios</a>
+        <a href="#pam-conab" data-aba="pam-conab">PAM × CONAB</a>
+        <a href="#precos" data-aba="precos">Preços</a>
+        <a href="#credito" data-aba="credito">Crédito</a>
+        <a href="#clima" data-aba="clima">Clima</a>
+        <a href="#metodo" data-aba="metodo">Método e fontes</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="filtros" id="filtros">
+    <div class="envelope filtros-interno">
+      <label>Produto <select id="filtro-produto"></select></label>
+      <label>Local <select id="filtro-uf"></select></label>
+      <label id="rotulo-periodo" hidden><span id="nome-periodo">Ano</span> <select id="filtro-periodo"></select></label>
+      <span class="nota-filtro" id="nota-filtro"></span>
+      <button type="button" class="botao" id="botao-link">Copiar link</button>
+      <span class="aviso-copia" id="aviso-copia" aria-live="polite"></span>
+    </div>
+  </div>
+
+  <main class="envelope conteudo" id="conteudo" aria-live="polite"></main>
+
+  <template id="metodo">
+    <section class="metodo">
+      <div class="especime">Como cada número foi obtido</div>
+      <h2 class="secao-titulo">Método e fontes</h2>
+      <p class="secao-intro">Os dados são lidos das fontes públicas pelo <a href="https://github.com/bruno-portfolio/agrobr">agrobr</a>, uma biblioteca Python, gravados em Parquet com o contrato de cada conjunto, transformados em modelos <a href="https://www.getdbt.com/">dbt</a> sobre DuckDB e exportados para este painel estático. Cada número pode ser refeito a partir do código e da fonte citada.</p>
+
+      <h3>Fontes</h3>
+      <table>
+        <thead><tr><th>Fonte</th><th>O que entra aqui</th><th>Período</th><th>Uso</th></tr></thead>
+        <tbody>
+          <tr><td>IBGE, Produção Agrícola Municipal (PAM), tabela 5457 do SIDRA</td><td>Área plantada ou destinada à colheita, área colhida, quantidade produzida, rendimento médio e valor da produção de 11 lavouras, por município, UF e Brasil</td><td data-periodo="IBGE – PAM"></td><td>Dados abertos do IBGE; citar a fonte</td></tr>
+          <tr><td>CONAB, Acompanhamento da Safra Brasileira de Grãos</td><td>Área plantada, produção e produtividade por UF de soja, milho, arroz, feijão, algodão em caroço e trigo: série histórica revisada e cada levantamento mensal desde a safra 2022/23 (o mais recente: <span data-conab-ultimo></span>)</td><td data-periodo="CONAB – Acompanhamento de Safra"></td><td>Dados abertos; citar a fonte</td></tr>
+          <tr><td>CEPEA/ESALQ</td><td>Seis indicadores diários de preço (soja, milho, café arábica, café robusta, trigo e algodão em pluma)</td><td data-periodo="CEPEA/ESALQ"></td><td>Licença <a href="https://creativecommons.org/licenses/by-nc/4.0/deed.pt-br">CC BY-NC 4.0</a>: atribuição obrigatória; uso comercial depende de autorização do CEPEA</td></tr>
+          <tr><td>Banco Central, SICOR (Matriz de Dados do Crédito Rural)</td><td>Crédito de custeio contratado por UF e produto</td><td data-periodo="BCB – SICOR"></td><td>Licença <a href="https://opendatacommons.org/licenses/odbl/1-0/">ODbL 1.0</a>: atribuição ao Banco Central; base derivada compartilhada sob a mesma licença</td></tr>
+          <tr><td>IPCA (IBGE), obtido pela série 433 do SGS do Banco Central</td><td>Variação mensal, usada para corrigir valores</td><td data-periodo="BCB – SGS (IPCA)"></td><td>Dados abertos; citar a fonte</td></tr>
+          <tr><td>NASA POWER, Daily API v2.10.0</td><td>Chuva (PRECTOTCORR) e temperatura a 2 m (T2M) diárias, somadas ou médias por mês</td><td data-periodo="NASA POWER"></td><td>Domínio público, segundo o projeto POWER, que pede o agradecimento abaixo</td></tr>
+          <tr><td>IBGE, malhas territoriais (API de malhas, qualidade mínima)</td><td>Contornos de UFs e municípios dos mapas</td><td>consulta de 11/10/2026</td><td>Dados abertos; citar a fonte</td></tr>
+        </tbody>
+      </table>
+      <p>NASA POWER: <i>The data was obtained from National Aeronautics and Space Administration (NASA) Langley Research Center's Prediction Of Worldwide Energy Resources (POWER) project funded through the NASA Earth Science Division. The data was obtained from the POWER Project's Daily 2.10.0 version on <span data-nasa-acesso></span>.</i></p>
+      <p>Os arquivos de dados deste painel seguem a licença de origem: crédito rural derivado do SICOR sob ODbL 1.0; preços derivados do CEPEA sob CC BY-NC 4.0, sem uso comercial; os demais, dados abertos com a fonte citada. O código do projeto é MIT.</p>
+
+      <h3>Convenções</h3>
+      <ul>
+        <li><b>Safra de julho a junho.</b> Nos grãos, a safra 2023/24 corresponde à PAM de 2024, o ano da colheita. A CONAB rotula o trigo pelo ano da colheita ("2024" na série histórica); aqui ele vira a safra 2023/24, como os demais grãos, e a correspondência com a PAM foi conferida com os números de cada ano.</li>
+        <li><b>Café, cacau, cana, mandioca e laranja</b> têm a produção da PAM só por ano civil, como o IBGE publica, sem rótulo de safra. O crédito de custeio dessas lavouras segue a safra de julho a junho do Banco Central, como o de todos os produtos.</li>
+        <li><b>Valores reais</b> estão em reais do mês-base indicado no topo, corrigidos pelo IPCA: o valor anual usa a média do índice no ano, a safra usa a média de julho a junho e o preço mensal usa o índice do mês.</li>
+        <li><b>Algodão.</b> PAM e CONAB medem o algodão em caroço; o indicador do CEPEA é de algodão em pluma. Produção e preço não se multiplicam.</li>
+        <li><b>Preços são de praças, não de UFs.</b> Soja em Paranaguá (PR); milho na região de Campinas (SP), à vista, sem ICMS; café arábica posto em São Paulo (SP); café robusta retirado na origem (ES); trigo no Paraná, em R$/t; algodão em pluma posto na mesorregião de São Paulo, pagamento em 8 dias, em centavos de real por libra-peso.</li>
+        <li><b>Mudanças de metodologia do CEPEA</b> que afetam a série: o trigo desconta o prazo pela NPR até 30/11/2020 e pelo CDI desde 01/12/2020; o algodão usa a NPR até 11/12/2020 e o CDI depois. Em 01/06/2018 o indicador do algodão foi arbitrado.</li>
+        <li><b>PAM × CONAB.</b> As duas instituições medem a mesma safra por métodos diferentes. A diferença entre elas não é erro de nenhuma.</li>
+        <li><b>Clima.</b> Cada município cai numa célula de 0,5° de latitude × 0,625° de longitude da grade do NASA POWER (reanálise MERRA-2, não estação meteorológica). O clima de uma UF para um produto é a média das células dos municípios que plantaram o produto, ponderada pela área plantada na PAM, de julho a junho, só com meses completos. É um ano agrícola descritivo, usado só para os grãos plantados na primavera e no verão: parte da colheita do milho de segunda safra, do feijão de terceira safra e do algodão acontece depois de junho, e a PAM soma todas as safras do ano. O trigo, de inverno, fica de fora; o sorgo não tem PAM.</li>
+        <li><b>Crédito rural.</b> Custeio contratado, pela safra de julho a junho do mês de emissão do contrato.</li>
+      </ul>
+
+      <h3>Como os números foram conferidos</h3>
+      <p>Antes da publicação, em 11/10/2026, cada fonte foi comparada com a fonte primária por um caminho independente do agrobr:</p>
+      <table>
+        <thead><tr><th>Fonte</th><th>Conferência</th><th>Resultado</th></tr></thead>
+        <tbody>
+          <tr><td>PAM</td><td>105 linhas sorteadas (60 municípios, 30 UF-ano, 15 Brasil-ano), 4 variáveis cada, contra a API do SIDRA</td><td>420 valores, nenhuma diferença</td></tr>
+          <tr><td>CONAB</td><td>As seis planilhas da série histórica, baixadas do gov.br com o mesmo hash SHA-256 das usadas na carga, lidas por outro programa; todas as UFs, safras 2015/16 a 2023/24</td><td>2.876 de 2.888 valores idênticos; os 12 restantes são células do algodão 2020/21 marcadas com "-" na planilha da CONAB, que aqui ficam vazias</td></tr>
+          <tr><td>CEPEA</td><td>As seis séries oficiais baixadas do site do CEPEA, todos os dias desde 01/07/2015</td><td>16.882 de 16.883 dias idênticos; a exceção é o trigo em 20/02/2026 (R$ 1.161,04 aqui, R$ 1.161,05 no CEPEA)</td></tr>
+          <tr><td>SICOR</td><td>Consulta própria ao serviço do Banco Central, somada por UF</td><td>Soja 2016/17, soja 2023/24 e milho 2019/20 iguais ao centavo em todas as UFs, com o mesmo número de contratos</td></tr>
+          <tr><td>IPCA</td><td>Índice encadeado da série 433 contra o número-índice oficial do IBGE (tabela 1737)</td><td>Maior diferença relativa de 0,0007% em 153 meses</td></tr>
+          <tr><td>Clima</td><td>Chuva, temperatura e área coberta recalculadas por outro programa direto dos arquivos brutos (PAM municipal e 1.393 células do NASA POWER), em todas as 1.293 combinações de UF, produto e safra com clima</td><td>Todas iguais; em todas, 100% da área plantada tem os 12 meses completos</td></tr>
+          <tr><td>PAM × CONAB</td><td>Total Brasil por produto e safra, de 2015/16 a 2024/25</td><td>Dentro de ±8%, exceto feijão 2016/17 (+11,6%)</td></tr>
+        </tbody>
+      </table>
+      <p>O projeto dbt também testa a cada carga: soma dos municípios igual à UF publicada pelo IBGE e soma das UFs igual ao Brasil (tolerância de 0,1%), total Brasil da CONAB a menos de 15% da PAM, unicidade das chaves, unidades conhecidas e faixas de valores.</p>
+      <p>Todo mês, um workflow do GitHub Actions baixa o que mudou nas fontes, roda o dbt com todos os testes sobre os dados reais e só então publica este painel. Se uma fonte falha, fica o dado anterior e o projeto abre uma issue.</p>
+
+      <h3>Limites</h3>
+      <ul>
+        <li>A PAM de cada ano sai cerca de um ano depois da colheita; até lá, a safra mais recente tem só a estimativa da CONAB.</li>
+        <li>A área financiada do crédito rural não entra nesta versão.</li>
+        <li>O sorgo só tem crédito: o agrobr não lê o sorgo da PAM nem da CONAB.</li>
+        <li>As coordenadas do município são o ponto de referência da base de municípios do agrobr. Conferidas contra a malha do IBGE: 5.544 de 5.571 caem dentro do próprio município ou a menos de 0,01° (cerca de 1 km) do contorno simplificado; 26 ficam além disso, a até cerca de 10 km, e podem cair numa célula de clima diferente da do território do município; 1 não tem contorno na malha.</li>
+        <li>Boa Esperança do Norte (MT), que aparece na PAM a partir de 2025, não tem contorno na malha do IBGE usada nos mapas. A produção dele está nas tabelas e rankings, e o mapa avisa quando ele fica de fora.</li>
+      </ul>
+    </section>
+  </template>
+
+  <footer class="rodape">
+    <div class="envelope">
+      <span id="data-dados" class="data-dados">carregando…</span><br>
+      Fontes: IBGE (PAM e malhas), CONAB, CEPEA/ESALQ (CC BY-NC 4.0), Banco Central (SICOR, ODbL 1.0, e SGS) e NASA POWER. Código: <a href="https://github.com/bruno-portfolio/dbt-agrobr">dbt-agrobr</a> e <a href="https://github.com/bruno-portfolio/agrobr">agrobr</a>. Gráficos com <a href="https://echarts.apache.org/">Apache ECharts</a>.
+    </div>
+  </footer>
+</body>
+</html>
