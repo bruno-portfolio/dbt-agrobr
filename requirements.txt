@@ -1,0 +1,4 @@
+dbt-core==1.12.5
+dbt-duckdb==1.11.0
+sqlfluff==4.4.0
+ruff==0.15.0

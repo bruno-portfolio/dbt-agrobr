@@ -1,0 +1,11 @@
+dbt_agrobr:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: agrobr.duckdb
+      threads: 2
+    ci:
+      type: duckdb
+      path: ":memory:"
+      threads: 2

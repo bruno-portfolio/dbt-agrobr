@@ -1,0 +1,33 @@
+name: dbt_agrobr
+version: "0.1.0"
+config-version: 2
+require-dbt-version: [">=1.10.5", "<3.0.0"]
+profile: dbt_agrobr
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+clean-targets: ["target", "dbt_packages"]
+
+vars:
+  agrobr_dados: dados
+  codigo_ipca: 433
+  mes_base_ipca: null
+  grade_lat_graus: 0.5
+  grade_lon_graus: 0.625
+  tolerancia_pam_soma_municipal: 0.001
+  tolerancia_pam_conab: 0.15
+
+models:
+  dbt_agrobr:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: view
+    marts:
+      +materialized: table
+
+seeds:
+  dbt_agrobr:
+    +quote_columns: false

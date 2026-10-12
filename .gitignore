@@ -1,0 +1,12 @@
+.venv*/
+target/
+dbt_packages/
+logs/
+*.duckdb
+*.duckdb.wal
+/dados/
+.user.yml
+dbt_internal_packages/
+__pycache__/
+.pytest_cache/
+/dados.tar.gz
